@@ -124,7 +124,7 @@ struct TrainerDashboardView: View {
             }
             .sheet(isPresented: $showingAddClient) {
                 AddClientView(client: makeEmptyClient()) { client in
-                    Task {
+                    Task<Void, Never>(priority: nil) {
                         _ = await services.clientService.createClient(client)
                         viewModel.load()
                         clients = await services.clientService.fetchClients(for: trainer.id)
@@ -133,7 +133,7 @@ struct TrainerDashboardView: View {
             }
             .sheet(isPresented: $showingAddAppointment) {
                 AddAppointmentView(trainer: trainer, clients: clients) { appointment in
-                    Task {
+                    Task<Void, Never>(priority: nil) {
                         _ = await services.appointmentService.createAppointment(appointment)
                         viewModel.load()
                     }
@@ -346,7 +346,7 @@ struct ClientDetailView: View {
                                 .foregroundStyle(AppColors.warning)
                         }
                         SecondaryButton(title: "Genera codice monouso", systemImage: "key.horizontal") {
-                            Task {
+                            Task<Void, Never>(priority: nil) {
                                 do {
                                     inviteCode = try await services.inviteCodeService.generateInviteCode(trainerID: client.trainerID, clientID: client.id)
                                     inviteError = nil

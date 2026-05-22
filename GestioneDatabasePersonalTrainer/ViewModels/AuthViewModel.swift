@@ -26,13 +26,13 @@ final class AuthViewModel: ObservableObject {
     }
 
     func restoreSession() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             session = try? await authService.restoreSession()
         }
     }
 
     func loginTrainer() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             isLoading = true
             defer { isLoading = false }
             do {
@@ -45,7 +45,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func loginClient() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             isLoading = true
             defer { isLoading = false }
             do {
@@ -58,7 +58,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func loginClientWithEmail() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             isLoading = true
             defer { isLoading = false }
             do {
@@ -71,7 +71,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func registerTrainer() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             isLoading = true
             defer { isLoading = false }
             do {
@@ -91,7 +91,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func registerClientWithInviteCode() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             isLoading = true
             defer { isLoading = false }
             do {
@@ -116,7 +116,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func logout() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             await authService.logout()
             session = nil
             errorMessage = nil

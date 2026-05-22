@@ -58,7 +58,7 @@ final class DailyCheckInViewModel: ObservableObject {
             updatedAt: nil
         )
 
-        Task {
+        Task<Void, Never>(priority: nil) {
             do {
                 let saved = try await checkInService.createOrUpdateTodayCheckIn(checkIn)
                 _ = await streakService.updateCheckInStreak(trainerID: client.trainerID, clientID: client.id)
@@ -89,7 +89,7 @@ final class TrainerInsightsViewModel: ObservableObject {
     func load(clients: [Client], progressEntries: [ProgressEntry]) {
         isLoading = true
         errorMessage = nil
-        Task {
+        Task<Void, Never>(priority: nil) {
             insights = await services.trainerInsightsService.fetchClientsNeedingAttention(
                 trainerID: trainer.id,
                 clients: clients,

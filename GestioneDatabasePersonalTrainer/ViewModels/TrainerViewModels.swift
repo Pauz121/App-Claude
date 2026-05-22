@@ -19,7 +19,7 @@ final class TrainerDashboardViewModel: ObservableObject {
     }
 
     func load() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             clients = await services.clientService.fetchClients(for: trainer.id)
             appointments = await services.appointmentService.fetchAppointments(for: trainer.id)
             workoutPlans = await services.workoutService.fetchWorkoutPlans(for: trainer.id)
@@ -75,7 +75,7 @@ final class ClientsViewModel: ObservableObject {
     }
 
     func load() {
-        Task { clients = await clientService.fetchClients(for: trainer.id) }
+        Task<Void, Never>(priority: nil) { clients = await clientService.fetchClients(for: trainer.id) }
     }
 
     func makeEmptyClient() -> Client {
@@ -98,7 +98,7 @@ final class ClientsViewModel: ObservableObject {
     }
 
     func save(_ client: Client) {
-        Task {
+        Task<Void, Never>(priority: nil) {
             if clients.contains(where: { $0.id == client.id }) {
                 _ = try? await clientService.updateClient(client)
             } else {
@@ -109,7 +109,7 @@ final class ClientsViewModel: ObservableObject {
     }
 
     func delete(_ client: Client) {
-        Task {
+        Task<Void, Never>(priority: nil) {
             await clientService.deleteClient(client)
             load()
         }
@@ -142,11 +142,11 @@ final class AppointmentsViewModel: ObservableObject {
     }
 
     func load() {
-        Task { appointments = await service.fetchAppointments(for: trainer.id) }
+        Task<Void, Never>(priority: nil) { appointments = await service.fetchAppointments(for: trainer.id) }
     }
 
     func save(_ appointment: Appointment) {
-        Task {
+        Task<Void, Never>(priority: nil) {
             if appointments.contains(where: { $0.id == appointment.id }) {
                 _ = try? await service.updateAppointment(appointment)
             } else {
@@ -157,7 +157,7 @@ final class AppointmentsViewModel: ObservableObject {
     }
 
     func delete(_ appointment: Appointment) {
-        Task {
+        Task<Void, Never>(priority: nil) {
             await service.deleteAppointment(appointment)
             load()
         }
@@ -187,11 +187,11 @@ final class MachinesViewModel: ObservableObject {
     }
 
     func load() {
-        Task { machines = await service.fetchMachines(for: trainer.id) }
+        Task<Void, Never>(priority: nil) { machines = await service.fetchMachines(for: trainer.id) }
     }
 
     func save(_ machine: Machine) {
-        Task {
+        Task<Void, Never>(priority: nil) {
             if machines.contains(where: { $0.id == machine.id }) {
                 _ = try? await service.updateMachine(machine)
             } else {
@@ -202,7 +202,7 @@ final class MachinesViewModel: ObservableObject {
     }
 
     func delete(_ machine: Machine) {
-        Task {
+        Task<Void, Never>(priority: nil) {
             await service.deleteMachine(machine)
             load()
         }
@@ -222,7 +222,7 @@ final class WorkoutPlansViewModel: ObservableObject {
     }
 
     func load() {
-        Task { plans = await service.fetchWorkoutPlans(for: trainer.id) }
+        Task<Void, Never>(priority: nil) { plans = await service.fetchWorkoutPlans(for: trainer.id) }
     }
 
     func createTemplatePlan(client: Client, name: String, goal: String) {
@@ -248,7 +248,7 @@ final class WorkoutPlansViewModel: ObservableObject {
             ]
         )
 
-        Task {
+        Task<Void, Never>(priority: nil) {
             _ = await service.createWorkoutPlan(plan)
             load()
         }
@@ -268,7 +268,7 @@ final class NutritionPlansViewModel: ObservableObject {
     }
 
     func load() {
-        Task { plans = await service.fetchNutritionPlans(for: trainer.id) }
+        Task<Void, Never>(priority: nil) { plans = await service.fetchNutritionPlans(for: trainer.id) }
     }
 
     func createTemplatePlan(client: Client, calories: Int, targetWeight: Double) {
@@ -291,7 +291,7 @@ final class NutritionPlansViewModel: ObservableObject {
             ]
         )
 
-        Task {
+        Task<Void, Never>(priority: nil) {
             _ = await service.createNutritionPlan(plan)
             load()
         }

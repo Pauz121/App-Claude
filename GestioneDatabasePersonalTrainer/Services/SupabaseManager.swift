@@ -164,7 +164,8 @@ final class SupabaseManager {
         let base = baseURL.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         var components = URLComponents(string: "\(base)/\(normalizedPath)")
         if !queryItems.isEmpty {
-            components?.queryItems = (components?.queryItems ?? []) + queryItems
+            let existingQueryItems = components?.queryItems ?? []
+            components?.queryItems = existingQueryItems + queryItems
         }
         guard let url = components?.url else { throw SupabaseError.invalidURL }
 

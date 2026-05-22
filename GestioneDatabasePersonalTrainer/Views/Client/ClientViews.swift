@@ -62,7 +62,7 @@ struct ClientDashboardView: View {
                         isLoading: viewModel.isLoading
                     ) {
                         if viewModel.healthKitState == .authorized {
-                            Task { await viewModel.refreshStepsFromHealthKit() }
+                            Task<Void, Never>(priority: nil) { await viewModel.refreshStepsFromHealthKit() }
                         } else {
                             viewModel.requestHealthKitAccessAndRefresh()
                         }
@@ -106,7 +106,7 @@ struct ClientDashboardView: View {
                         backPhotoName: nil,
                         notes: notes
                     )
-                    Task {
+                    Task<Void, Never>(priority: nil) {
                         _ = await services.progressService.addProgressEntry(entry)
                         viewModel.load()
                     }
@@ -222,7 +222,7 @@ struct ClientDashboardView: View {
             showingAddProgress = true
         case .steps:
             if viewModel.healthKitState == .authorized {
-                Task { await viewModel.refreshStepsFromHealthKit() }
+                Task<Void, Never>(priority: nil) { await viewModel.refreshStepsFromHealthKit() }
             } else {
                 viewModel.requestHealthKitAccessAndRefresh()
             }

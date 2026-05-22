@@ -30,7 +30,7 @@ final class ClientDashboardViewModel: ObservableObject {
     func load() {
         isLoading = true
         errorMessage = nil
-        Task {
+        Task<Void, Never>(priority: nil) {
             appointments = await services.appointmentService.fetchAppointments(for: client.id)
             workoutPlans = await services.workoutService.fetchWorkoutPlans(forClient: client.id)
             nutritionPlans = await services.nutritionService.fetchNutritionPlans(forClient: client.id)
@@ -48,7 +48,7 @@ final class ClientDashboardViewModel: ObservableObject {
     }
 
     func requestHealthKitAccessAndRefresh() {
-        Task {
+        Task<Void, Never>(priority: nil) {
             do {
                 try await services.healthKitService.requestAuthorization()
                 await refreshStepsFromHealthKit()
@@ -90,7 +90,7 @@ final class ClientDashboardViewModel: ObservableObject {
     }
 
     func markGoalCompleted(_ goal: DailyGoal) {
-        Task {
+        Task<Void, Never>(priority: nil) {
             _ = await services.dailyGoalsService.markGoalCompleted(goal)
             if goal.goalType == .checkIn {
                 todayCheckIn = await services.dailyCheckInService.fetchTodayCheckIn(clientId: client.id)
@@ -101,7 +101,7 @@ final class ClientDashboardViewModel: ObservableObject {
 
     func didSaveCheckIn(_ checkIn: DailyCheckIn) {
         todayCheckIn = checkIn
-        Task {
+        Task<Void, Never>(priority: nil) {
             streaks = await services.streakService.fetchClientStreaks(clientId: client.id)
             rebuildGoals()
         }
@@ -252,7 +252,7 @@ final class ClientWorkoutViewModel: ObservableObject {
     }
 
     func load() {
-        Task { plans = await service.fetchWorkoutPlans(forClient: client.id) }
+        Task<Void, Never>(priority: nil) { plans = await service.fetchWorkoutPlans(forClient: client.id) }
     }
 
     var activePlan: WorkoutPlan? {
@@ -281,7 +281,7 @@ final class ClientNutritionViewModel: ObservableObject {
     }
 
     func load() {
-        Task { plans = await service.fetchNutritionPlans(forClient: client.id) }
+        Task<Void, Never>(priority: nil) { plans = await service.fetchNutritionPlans(forClient: client.id) }
     }
 
     var activePlan: NutritionPlan? {
@@ -302,7 +302,7 @@ final class ClientProgressViewModel: ObservableObject {
     }
 
     func load() {
-        Task { entries = await service.fetchProgressEntries(for: client.id) }
+        Task<Void, Never>(priority: nil) { entries = await service.fetchProgressEntries(for: client.id) }
     }
 
     func addEntry(weight: Double, waist: Double, chest: Double, arm: Double, leg: Double, notes: String) {
@@ -321,7 +321,7 @@ final class ClientProgressViewModel: ObservableObject {
             notes: notes
         )
 
-        Task {
+        Task<Void, Never>(priority: nil) {
             _ = await service.addProgressEntry(entry)
             load()
         }
