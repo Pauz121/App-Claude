@@ -157,6 +157,15 @@ final class AuthService {
         return client
     }
 
+    func demoTrainer() -> Trainer {
+        database.trainer
+    }
+
+    func demoClient() throws -> Client {
+        guard let client = database.clients.first else { throw AppError.missingClient }
+        return client
+    }
+
     func logout() async {
         if AppConfiguration.isSupabaseConfigured {
             await supabase.signOut()

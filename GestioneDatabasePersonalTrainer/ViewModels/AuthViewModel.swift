@@ -27,7 +27,9 @@ final class AuthViewModel: ObservableObject {
 
     func restoreSession() {
         Task<Void, Never>(priority: nil) {
-            session = try? await authService.restoreSession()
+            if let restoredSession = try? await authService.restoreSession() {
+                session = restoredSession
+            }
         }
     }
 
@@ -104,15 +106,19 @@ final class AuthViewModel: ObservableObject {
     }
 
     func loginTrainerDemo() {
-        email = "demo.trainer@test.com"
-        password = "DemoTrainer123!"
-        loginTrainer()
+        isLoading = false
+        errorMessage = nil
+        session = .trainer(authService.demoTrainer())
     }
 
     func loginClientDemo() {
-        email = "demo.cliente@test.com"
-        password = "DemoCliente123!"
-        loginClientWithEmail()
+        isLoading = false
+        do {
+            session = .client(try authService.demoClient())
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 
     func logout() {
