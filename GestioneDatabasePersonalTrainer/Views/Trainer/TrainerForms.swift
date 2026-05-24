@@ -1,65 +1,158 @@
 import SwiftUI
+import UIKit
 
 struct AddClientView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var client: Client
+    @State private var selectedObjective: String
     let onSave: (Client) -> Void
+    private let objectives = ["Dimagrimento", "Massa", "Ricomposizione", "Tonificazione", "Forza", "Altro"]
 
     init(client: Client, onSave: @escaping (Client) -> Void) {
         _client = State(initialValue: client)
+        _selectedObjective = State(initialValue: client.goal.isEmpty ? "Dimagrimento" : client.goal)
         self.onSave = onSave
     }
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Anagrafica") {
-                    TextField("Nome", text: $client.firstName)
-                    TextField("Cognome", text: $client.lastName)
-                    TextField("Email", text: $client.email)
-                        .keyboardType(.emailAddress)
-                        .textInputAutocapitalization(.never)
-                    TextField("Telefono", text: $client.phone)
-                        .keyboardType(.phonePad)
-                    DatePicker("Data nascita", selection: $client.birthDate, displayedComponents: .date)
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text(client.firstName.isEmpty ? "Nuovo cliente" : "Modifica cliente")
+                        .font(DesignSystem.Typography.titleLG())
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
 
-                Section("Dati fisici") {
-                    TextField("Altezza", value: $client.heightCm, format: .number)
-                        .keyboardType(.decimalPad)
-                    TextField("Peso iniziale", value: $client.initialWeightKg, format: .number)
-                        .keyboardType(.decimalPad)
-                    TextField("Peso attuale", value: $client.currentWeightKg, format: .number)
-                        .keyboardType(.decimalPad)
-                    TextField("Obiettivo", text: $client.goal, axis: .vertical)
-                }
-
-                Section("Accesso") {
-                    HStack {
-                        Text("Codice")
-                        Spacer()
-                        Text(client.accessCode)
-                            .font(.system(.body, design: .monospaced).weight(.semibold))
-                            .foregroundStyle(AppColors.success)
+                    SectionLabel(text: "Anagrafica")
+                    field("Nome", text: $client.firstName)
+                    field("Cognome", text: $client.lastName)
+                    field("Numero di telefono", text: $client.phone, keyboard: .phonePad)
+                    FitCard {
+                        DatePicker("Data nascita", selection: $client.birthDate, displayedComponents: .date)
+                            .font(DesignSystem.Typography.labelMD())
+                            .tint(DesignSystem.Colors.indigo)
                     }
-                }
 
-                Section("Note trainer") {
+                    SectionLabel(text: "Dati fisici")
+                    HStack(spacing: 10) {
+                        numberField("Altezza", value: $client.heightCm, suffix: "cm")
+                        numberField("Peso iniziale", value: $client.initialWeightKg, suffix: "kg")
+                    }
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 128), spacing: 8)], spacing: 8) {
+                        ForEach(objectives, id: \.self) { objective in
+                            Button {
+                                selectedObjective = objective
+                                client.goal = objective
+                            } label: {
+                                Text(objective)
+                                    .font(DesignSystem.Typography.labelMD())
+                                    .foregroundStyle(selectedObjective == objective ? .white : DesignSystem.Colors.txtPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 42)
+                                    .background(selectedObjective == objective ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgCard)
+                                    .clipShape(Capsule())
+                                    .overlay(Capsule().stroke(selectedObjective == objective ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgLine, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    SectionLabel(text: "Accesso cliente")
+                    if client.isRegistered {
+                        Text("✓ Cliente registrato")
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.limeDark)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(DesignSystem.Colors.limeBg)
+                            .clipShape(Capsule())
+                    } else {
+                        FitCard {
+                            HStack {
+                                Text("Codice")
+                                    .font(DesignSystem.Typography.bodyMD())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                Spacer()
+                                Text(client.accessCode)
+                                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
+                                    .foregroundStyle(DesignSystem.Colors.limeDark)
+                            }
+                        }
+                        Text("Il cliente usera questo codice per accedere alla sua app")
+                            .font(DesignSystem.Typography.bodySM())
+                            .italic()
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        Button {
+                            UIPasteboard.general.string = client.accessCode
+                        } label: {
+                            Label("Copia codice", systemImage: "doc.on.doc")
+                                .font(DesignSystem.Typography.labelMD())
+                                .foregroundStyle(DesignSystem.Colors.indigo)
+                        }
+                    }
+
+                    SectionLabel(text: "Note trainer")
                     TextEditor(text: $client.trainerNotes)
                         .frame(minHeight: 110)
-                }
-            }
-            .navigationTitle(client.firstName.isEmpty ? "Nuovo cliente" : "Modifica cliente")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Annulla") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva") {
+                        .padding(10)
+                        .background(DesignSystem.Colors.bgCard)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(DesignSystem.Colors.bgLine, lineWidth: 1))
+
+                    PrimaryButton(title: client.firstName.isEmpty ? "Crea cliente & invia codice" : "Salva modifiche") {
+                        if client.goal.isEmpty {
+                            client.goal = selectedObjective
+                        }
                         onSave(client)
                         dismiss()
                     }
                     .disabled(client.firstName.isEmpty || client.lastName.isEmpty)
+                }
+                .padding(20)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla") { dismiss() }
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Salva") {
+                        if client.goal.isEmpty {
+                            client.goal = selectedObjective
+                        }
+                        onSave(client)
+                        dismiss()
+                    }
+                    .foregroundStyle(DesignSystem.Colors.indigo)
+                    .disabled(client.firstName.isEmpty || client.lastName.isEmpty)
+                }
+            }
+            .appScreen()
+        }
+    }
+
+    private func field(_ title: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {
+        FitCard {
+            TextField(title, text: text)
+                .keyboardType(keyboard)
+                .font(DesignSystem.Typography.bodyMD())
+                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+        }
+    }
+
+    private func numberField(_ title: String, value: Binding<Double>, suffix: String) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                HStack {
+                    TextField(title, value: value, format: .number)
+                        .keyboardType(.decimalPad)
+                        .font(.custom("Archivo-ExtraBold", size: 18))
+                    Text(suffix)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
                 }
             }
         }

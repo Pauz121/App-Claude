@@ -519,6 +519,21 @@ final class WorkoutService {
         }
         return plan
     }
+
+    func addExerciseWeightHistory(trainerID: UUID, clientID: UUID, exerciseID: UUID, weightKg: Double, effectiveFromSessionID: UUID?) async {
+        guard AppConfiguration.isSupabaseConfigured else { return }
+        let dto = ExerciseWeightHistoryDTO(
+            id: UUID(),
+            trainerId: trainerID,
+            clientId: clientID,
+            exerciseId: exerciseID,
+            sessionDate: SupabaseMapper.formatDate(Date()),
+            weightKg: weightKg,
+            effectiveFromSessionId: effectiveFromSessionID,
+            createdByUserId: supabase.session?.user.id
+        )
+        let _: [ExerciseWeightHistoryDTO]? = try? await supabase.insert("exercise_weight_history", value: dto)
+    }
 }
 
 @MainActor

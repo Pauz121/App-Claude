@@ -35,6 +35,8 @@ struct ClientDTO: Codable {
     var initialWeightKg: Double?
     var currentWeightKg: Double?
     var goal: String?
+    var accessCode: String?
+    var isRegistered: Bool?
     var notes: String?
     var joinedAt: String?
 }
@@ -71,6 +73,7 @@ struct WorkoutPlanDTO: Codable {
     var startsAt: String?
     var endsAt: String?
     var status: String
+    var published: Bool? = nil
 }
 
 struct NutritionPlanDTO: Codable {
@@ -87,6 +90,18 @@ struct NutritionPlanDTO: Codable {
     var startsAt: String?
     var endsAt: String?
     var status: String
+    var published: Bool? = nil
+}
+
+struct ExerciseWeightHistoryDTO: Codable, Identifiable, Hashable {
+    var id: UUID?
+    var trainerId: UUID
+    var clientId: UUID
+    var exerciseId: UUID
+    var sessionDate: String?
+    var weightKg: Double
+    var effectiveFromSessionId: UUID?
+    var createdByUserId: UUID?
 }
 
 struct ProgressEntryDTO: Codable {
@@ -269,7 +284,8 @@ enum SupabaseMapper {
             initialWeightKg: dto.initialWeightKg ?? 0,
             currentWeightKg: dto.currentWeightKg ?? dto.initialWeightKg ?? 0,
             goal: dto.goal ?? "",
-            accessCode: "",
+            accessCode: dto.accessCode ?? "",
+            isRegistered: dto.isRegistered ?? dto.userId != nil,
             joinedAt: parseDateTime(dto.joinedAt) ?? Date(),
             trainerNotes: dto.notes ?? ""
         )
@@ -290,6 +306,8 @@ enum SupabaseMapper {
             initialWeightKg: client.initialWeightKg,
             currentWeightKg: client.currentWeightKg,
             goal: client.goal,
+            accessCode: client.accessCode.isEmpty ? nil : client.accessCode,
+            isRegistered: client.isRegistered,
             notes: client.trainerNotes,
             joinedAt: nil
         )

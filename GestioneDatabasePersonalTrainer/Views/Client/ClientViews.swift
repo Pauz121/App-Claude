@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct ClientMainTabView: View {
     @EnvironmentObject private var services: AppServices
@@ -7,27 +8,26 @@ struct ClientMainTabView: View {
     var body: some View {
         TabView {
             ClientDashboardView(client: client, services: services)
-                .tabItem { Label("Home", systemImage: "house") }
-
-            ClientProfileView(client: client, services: services)
-                .tabItem { Label("Profilo", systemImage: "person.crop.circle") }
+                .tabItem { Label("Oggi", systemImage: "house.fill") }
 
             ClientWorkoutView(client: client, services: services)
-                .tabItem { Label("Scheda", systemImage: "figure.run") }
+                .tabItem { Label("Scheda", systemImage: "dumbbell.fill") }
 
             ClientNutritionView(client: client, services: services)
                 .tabItem { Label("Dieta", systemImage: "fork.knife") }
 
             ClientProgressView(client: client, services: services)
-                .tabItem { Label("Progressi", systemImage: "chart.line.uptrend.xyaxis") }
+                .tabItem { Label("Progressi", systemImage: "chart.xyaxis.line") }
+
+            ClientChatView(client: client)
+                .tabItem { Label("Coach", systemImage: "bubble.left.and.bubble.right.fill") }
         }
+        .tint(DesignSystem.Colors.limeDark)
     }
 }
 
 struct ClientDashboardView: View {
-    @EnvironmentObject private var authViewModel: AuthViewModel
     @StateObject private var viewModel: ClientDashboardViewModel
-    @State private var showingAddProgress = false
     @State private var showingCheckIn = false
     let client: Client
     let services: AppServices
@@ -41,78 +41,27 @@ struct ClientDashboardView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    todayHeader
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    weeklyProgressCard
 
-                    if viewModel.healthKitState != .authorized || viewModel.todaySteps == nil {
-                        HealthPermissionView(state: viewModel.healthKitState) {
-                            viewModel.requestHealthKitAccessAndRefresh()
-                        }
+                    SectionLabel(text: "Oggi")
+                    todayWorkoutCard
+
+                    HStack(spacing: 12) {
+                        miniMetric(icon: "flame.fill", color: DesignSystem.Colors.teal, value: "2.350", subtitle: "kcal di oggi")
+                        stepsMiniCard
                     }
 
-                    if let errorMessage = viewModel.errorMessage {
-                        Text(errorMessage)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(AppColors.dangerRed)
-                    }
-
-                    StepsSummaryCard(
-                        summary: viewModel.todaySteps,
-                        motivation: viewModel.stepMotivationText,
-                        isLoading: viewModel.isLoading
-                    ) {
-                        if viewModel.healthKitState == .authorized {
-                            Task<Void, Never>(priority: nil) { await viewModel.refreshStepsFromHealthKit() }
-                        } else {
-                            viewModel.requestHealthKitAccessAndRefresh()
-                        }
-                    }
-
-                    DailyGoalsView(goals: viewModel.todayGoals, onTapGoal: handleGoalTap)
-
-                    checkInSection
-
-                    StreakCard(streak: viewModel.checkInStreak ?? viewModel.stepsStreak, fallbackTitle: "Costanza")
-
-                    todayPlanSection
-
-                    progressSection
+                    SectionLabel(text: "Dal tuo coach")
+                    checkInCard
                 }
-                .padding(AppSpacing.lg)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 18)
             }
-            .navigationTitle("Oggi")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        authViewModel.logout()
-                    } label: {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
-                    }
-                }
-            }
-            .sheet(isPresented: $showingAddProgress) {
-                AddProgressEntryView(client: client) { weight, waist, chest, arm, leg, notes in
-                    let entry = ProgressEntry(
-                        id: UUID(),
-                        clientID: client.id,
-                        date: Date(),
-                        weightKg: weight,
-                        waistCm: waist,
-                        chestCm: chest,
-                        armCm: arm,
-                        legCm: leg,
-                        frontPhotoName: nil,
-                        sidePhotoName: nil,
-                        backPhotoName: nil,
-                        notes: notes
-                    )
-                    Task<Void, Never>(priority: nil) {
-                        _ = await services.progressService.addProgressEntry(entry)
-                        viewModel.load()
-                    }
-                }
-            }
-            .sheet(isPresented: $showingCheckIn) {
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
+            .fullScreenCover(isPresented: $showingCheckIn) {
                 DailyCheckInSheet(client: client, existing: viewModel.todayCheckIn, services: services) { saved in
                     viewModel.didSaveCheckIn(saved)
                 }
@@ -122,386 +71,1404 @@ struct ClientDashboardView: View {
         }
     }
 
-    private var todayHeader: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Text("Ciao \(client.firstName)")
-                .font(AppTypography.hero)
-                .foregroundStyle(AppColors.textPrimary)
-            Text(Date().formatted(.dateTime.weekday(.wide).day().month(.wide)))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppColors.textSecondary)
-            Text("Oggi concentriamoci su movimento e costanza.")
-                .font(AppTypography.body)
-                .foregroundStyle(AppColors.textSecondary)
-                .lineLimit(2)
-        }
-        .padding(.top, AppSpacing.sm)
-    }
-
-    private var checkInSection: some View {
-        SectionCard(title: "Check-in", icon: "checklist") {
-            if let checkIn = viewModel.todayCheckIn {
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.sm) {
-                    MetricMiniCard(title: "Energia", value: "\(checkIn.energyLevel)/5", icon: "bolt.fill", color: AppColors.energyOrange)
-                    MetricMiniCard(title: "Sonno", value: "\(checkIn.sleepQuality)/5", icon: "moon.fill", color: AppColors.infoBlue)
-                    MetricMiniCard(title: "Dieta", value: checkIn.dietAdherence.label, icon: "leaf", color: AppColors.successGreen)
-                    MetricMiniCard(title: "Allenamento", value: checkIn.workoutCompleted ? "Fatto" : "No", icon: "figure.run", color: checkIn.workoutCompleted ? AppColors.successGreen : AppColors.warningYellow)
-                }
-                SecondaryButton(title: "Modifica check-in", systemImage: "pencil") {
-                    showingCheckIn = true
-                }
-            } else {
-                VStack(alignment: .leading, spacing: AppSpacing.md) {
-                    Text("Completa il check-in di oggi")
-                        .font(.headline)
-                        .foregroundStyle(AppColors.textPrimary)
-                    Text("Servono meno di due minuti per aggiornare trainer e percorso.")
-                        .font(.subheadline)
-                        .foregroundStyle(AppColors.textSecondary)
-                    PrimaryButton(title: "Compila ora", systemImage: "checkmark.circle") {
-                        showingCheckIn = true
-                    }
-                }
-            }
-        }
-    }
-
-    private var todayPlanSection: some View {
-        SectionCard(title: "Allenamento e piano", icon: "calendar.badge.clock") {
-            VStack(spacing: AppSpacing.md) {
-                if let appointment = viewModel.nextAppointment {
-                    AppointmentRowView(appointment: appointment, client: client)
-                } else {
-                    Text("Nessun appuntamento programmato.")
-                        .font(.subheadline)
-                        .foregroundStyle(AppColors.textSecondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.sm) {
-                    MetricMiniCard(title: "Scheda attiva", value: viewModel.activeWorkoutPlan?.name ?? "Non assegnata", icon: "figure.run", color: AppColors.primaryBlack)
-                    MetricMiniCard(title: "Dieta", value: viewModel.activeNutritionPlan.map { "\($0.dailyCalories) kcal" } ?? "Non assegnata", icon: "fork.knife", color: AppColors.nutritionYellow)
-                }
-
-                HStack(spacing: AppSpacing.sm) {
-                    NavigationLink {
-                        ClientWorkoutView(client: client, services: services)
-                    } label: {
-                        Label("Scheda", systemImage: "figure.run")
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-
-                    NavigationLink {
-                        ClientNutritionView(client: client, services: services)
-                    } label: {
-                        Label("Dieta", systemImage: "fork.knife")
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                }
-            }
-        }
-    }
-
-    private var progressSection: some View {
-        SectionCard(title: "Progressi", icon: "chart.line.uptrend.xyaxis") {
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.sm) {
-                MetricMiniCard(title: "Peso attuale", value: String(format: "%.1f kg", client.currentWeightKg), icon: "scalemass", color: AppColors.successGreen)
-                MetricMiniCard(title: "Media passi", value: "\(Int(viewModel.weeklyAverageSteps))", icon: "chart.bar", color: AppColors.infoBlue)
-            }
-            SecondaryButton(title: "Aggiungi peso o foto", systemImage: "plus.circle") {
-                showingAddProgress = true
-            }
-        }
-    }
-
-    private func handleGoalTap(_ goal: DailyGoal) {
-        switch goal.goalType {
-        case .checkIn:
-            showingCheckIn = true
-        case .weight, .progressPhoto:
-            showingAddProgress = true
-        case .steps:
-            if viewModel.healthKitState == .authorized {
-                Task<Void, Never>(priority: nil) { await viewModel.refreshStepsFromHealthKit() }
-            } else {
-                viewModel.requestHealthKitAccessAndRefresh()
-            }
-        case .workout:
-            break
-        }
-    }
-}
-
-struct ClientProfileView: View {
-    @StateObject private var progressViewModel: ClientProgressViewModel
-    let client: Client
-
-    init(client: Client, services: AppServices) {
-        self.client = client
-        _progressViewModel = StateObject(wrappedValue: ClientProgressViewModel(client: client, service: services.progressService))
-    }
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    SectionCard(title: client.fullName, icon: "person.crop.circle") {
-                        ClientInfoLine(label: "Email", value: client.email)
-                        ClientInfoLine(label: "Altezza", value: String(format: "%.0f cm", client.heightCm))
-                        ClientInfoLine(label: "Peso iniziale", value: String(format: "%.1f kg", client.initialWeightKg))
-                        ClientInfoLine(label: "Peso attuale", value: String(format: "%.1f kg", client.currentWeightKg))
-                        ClientInfoLine(label: "Obiettivo", value: client.goal)
-                    }
-
-                    SectionCard(title: "Storico progressi", icon: "chart.xyaxis.line") {
-                        if progressViewModel.entries.isEmpty {
-                            Text("Nessun progresso registrato.")
-                                .foregroundStyle(AppColors.textSecondary)
-                        } else {
-                            ForEach(progressViewModel.entries) { entry in
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(entry.date.formattedDay())
-                                            .font(.headline)
-                                        Text(entry.notes)
-                                            .font(.caption)
-                                            .foregroundStyle(AppColors.textSecondary)
-                                    }
-                                    Spacer()
-                                    Text("\(entry.weightKg, specifier: "%.1f") kg")
-                                        .font(.subheadline.weight(.semibold))
-                                }
-                                Divider().background(AppColors.divider)
-                            }
-                        }
-                    }
-                }
-                .padding(AppSpacing.lg)
-            }
-            .navigationTitle("Profilo")
-            .appScreen()
-            .task { progressViewModel.load() }
-        }
-    }
-}
-
-private struct ClientInfoLine: View {
-    let label: String
-    let value: String
-
-    var body: some View {
+    private var header: some View {
         HStack(alignment: .top) {
-            Text(label)
-                .foregroundStyle(AppColors.textSecondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("\(weekday.uppercased()) · SETTIMANA \(weekNumber)")
+                    .font(DesignSystem.Typography.sectionLabel())
+                    .tracking(1.8)
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                Text("Ciao, \(client.firstName)")
+                    .font(DesignSystem.Typography.titleXL())
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+            }
             Spacer()
-            Text(value)
-                .multilineTextAlignment(.trailing)
+            NavigationLink {
+                ClientProfileView(client: client, services: services)
+            } label: {
+                AvatarView(initials: initials, gradient: [DesignSystem.Colors.lime, DesignSystem.Colors.teal], size: 42)
+            }
+            .buttonStyle(.plain)
         }
-        .font(.subheadline)
+    }
+
+    private var weeklyProgressCard: some View {
+        let total = max(viewModel.activeWorkoutPlan?.days.count ?? 3, 1)
+        let completed = min(total, viewModel.todayGoals.filter(\.isCompleted).count)
+        let progress = Double(completed) / Double(total)
+
+        return FitCard {
+            HStack(spacing: 18) {
+                FitProgressRing(
+                    progress: progress,
+                    color: DesignSystem.Colors.lime,
+                    lineWidth: 12,
+                    content: AnyView(
+                        VStack(spacing: 1) {
+                            Text("\(completed)/\(total)")
+                                .font(.custom("Archivo-Black", size: 20))
+                                .foregroundStyle(DesignSystem.Colors.limeDark)
+                            Text("sessioni")
+                                .font(.custom("Sora-Regular", size: 10))
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                    )
+                )
+                .frame(width: 96, height: 96)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Obiettivo settimanale")
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Text("\(completed) di \(total) sessioni")
+                        .font(.custom("Archivo-ExtraBold", size: 18))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    streakPill
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private var todayWorkoutCard: some View {
+        let day = viewModel.activeWorkoutPlan?.days.sorted { $0.dayIndex < $1.dayIndex }.first
+        let exerciseCount = day?.exercises.count ?? 0
+
+        return FitCard(background: DesignSystem.Colors.limeBg, border: Color(hex: "DDE7C2")) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text(day?.title.uppercased() ?? "ALLENAMENTO")
+                    .font(DesignSystem.Typography.labelSM())
+                    .tracking(1.1)
+                    .foregroundStyle(DesignSystem.Colors.limeDark)
+                Text(day?.title ?? "Allenamento di oggi")
+                    .font(.custom("Archivo-Black", size: 24))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text("\(exerciseCount) esercizi · ~\(max(exerciseCount * 8, 25)) min")
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                NavigationLink {
+                    ClientWorkoutView(client: client, services: services)
+                } label: {
+                    Text("Inizia allenamento ->")
+                        .font(.custom("Archivo-ExtraBold", size: 15))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(DesignSystem.Colors.limeDark)
+                        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func miniMetric(icon: String, color: Color, value: String, subtitle: String) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 9) {
+                FitIconChip(systemName: icon, color: color, background: color.opacity(0.12), size: 32)
+                Text(value)
+                    .font(.custom("Archivo-ExtraBold", size: 22))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text(subtitle)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var stepsMiniCard: some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 9) {
+                FitIconChip(systemName: "shoeprints.fill", color: DesignSystem.Colors.limeDark, background: DesignSystem.Colors.limeBg, size: 32)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("\(viewModel.todaySteps?.steps ?? 0)")
+                        .font(.custom("Archivo-ExtraBold", size: 22))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
+                    TrendBadge(value: "+10%")
+                }
+                Text("passi vs ieri")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var checkInCard: some View {
+        Button { showingCheckIn = true } label: {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(DesignSystem.Colors.limeDark)
+                    .frame(width: 9, height: 9)
+                    .shadow(color: DesignSystem.Colors.limeDark.opacity(0.45), radius: 7)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Check-in settimanale")
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text("5 domande · scade domenica")
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(DesignSystem.Colors.limeDark)
+            }
+            .padding(16)
+            .background(DesignSystem.Colors.limeBg)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(DesignSystem.Colors.lime, style: StrokeStyle(lineWidth: 1, dash: [6, 5]))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var streakPill: some View {
+        Text("\(viewModel.checkInStreak?.currentCount ?? 0) giorni di fila")
+            .font(DesignSystem.Typography.labelSM())
+            .foregroundStyle(DesignSystem.Colors.amber)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(DesignSystem.Colors.amberBg)
+            .clipShape(Capsule())
+    }
+
+    private var initials: String {
+        "\(client.firstName.first.map(String.init) ?? "")\(client.lastName.first.map(String.init) ?? "")"
+    }
+
+    private var weekday: String {
+        Date().formatted(.dateTime.weekday(.wide))
+    }
+
+    private var weekNumber: Int {
+        Calendar.current.component(.weekOfYear, from: Date())
     }
 }
 
 struct ClientWorkoutView: View {
     @StateObject private var viewModel: ClientWorkoutViewModel
+    let client: Client
+    let services: AppServices
 
     init(client: Client, services: AppServices) {
+        self.client = client
+        self.services = services
         _viewModel = StateObject(wrappedValue: ClientWorkoutViewModel(client: client, service: services.workoutService))
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: AppSpacing.md) {
-                    if let plan = viewModel.activePlan {
-                        SectionCard(title: plan.name, icon: "list.clipboard") {
-                            Text(plan.goal)
-                                .font(.subheadline)
-                                .foregroundStyle(AppColors.textSecondary)
-                            Text("\(plan.startDate.formattedDay()) - \(plan.endDate.formattedDay())")
-                                .font(.caption)
-                                .foregroundStyle(AppColors.textSecondary)
-                        }
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("SETTIMANA 1 DI \(max(viewModel.activePlan?.days.count ?? 1, 1))")
+                        .font(DesignSystem.Typography.sectionLabel())
+                        .tracking(1.8)
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Text("I tuoi allenamenti")
+                        .font(DesignSystem.Typography.titleLG())
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
 
-                        ForEach(plan.days) { day in
-                            NavigationLink {
-                                ClientWorkoutDetailView(day: day, isCompleted: viewModel.completedWorkoutDayIDs.contains(day.id)) {
+                    if let plan = viewModel.activePlan {
+                        LazyVStack(spacing: 12) {
+                            ForEach(plan.days.sorted { $0.dayIndex < $1.dayIndex }) { day in
+                                ClientWorkoutDayCard(
+                                    client: client,
+                                    services: services,
+                                    day: day,
+                                    isCompleted: viewModel.completedWorkoutDayIDs.contains(day.id)
+                                ) {
                                     viewModel.toggleCompletion(for: day)
                                 }
-                            } label: {
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Giorno \(day.dayIndex)")
-                                            .font(.caption)
-                                            .foregroundStyle(AppColors.accent)
-                                        Text(day.title)
-                                            .font(.headline)
-                                            .foregroundStyle(AppColors.textPrimary)
-                                        Text("\(day.exercises.count) esercizi")
-                                            .font(.caption)
-                                            .foregroundStyle(AppColors.textSecondary)
-                                    }
-                                    Spacer()
-                                    Image(systemName: viewModel.completedWorkoutDayIDs.contains(day.id) ? "checkmark.circle.fill" : "chevron.right")
-                                        .foregroundStyle(viewModel.completedWorkoutDayIDs.contains(day.id) ? AppColors.success : AppColors.textSecondary)
-                                }
-                                .appCard()
                             }
-                            .buttonStyle(.plain)
                         }
                     } else {
-                        EmptyStateView(title: "Nessuna scheda attiva", message: "Il trainer non ha ancora pubblicato una scheda.", icon: "figure.run")
+                        EmptyStateView(title: "Nessuna scheda attiva", message: "Il trainer non ha ancora pubblicato una scheda.", icon: "dumbbell")
                     }
                 }
-                .padding(AppSpacing.lg)
+                .padding(20)
             }
             .navigationTitle("Scheda")
+            .navigationBarTitleDisplayMode(.inline)
             .appScreen()
             .task { viewModel.load() }
         }
     }
 }
 
-struct ClientWorkoutDetailView: View {
+private struct ClientWorkoutDayCard: View {
+    let client: Client
+    let services: AppServices
     let day: WorkoutDay
     let isCompleted: Bool
     let onToggleCompleted: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                SectionCard(title: day.title, icon: "figure.run") {
-                    Text("Giorno \(day.dayIndex)")
-                        .font(.caption)
-                        .foregroundStyle(AppColors.textSecondary)
-                    PrimaryButton(title: isCompleted ? "Segna come da completare" : "Segna completato", systemImage: isCompleted ? "arrow.uturn.backward" : "checkmark.circle") {
-                        onToggleCompleted()
+        if isRestDay {
+            content
+                .opacity(0.6)
+        } else if isCompleted {
+            FitCard(background: DesignSystem.Colors.limeBg, border: Color(hex: "DDE7C2")) {
+                content
+            }
+        } else {
+            NavigationLink {
+                ClientWorkoutDetailView(client: client, services: services, day: day, isCompleted: isCompleted, onToggleCompleted: onToggleCompleted)
+            } label: {
+                FitCard { content }
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var content: some View {
+        HStack(spacing: 13) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(chipColor)
+                Text(chipText)
+                    .font(.custom("Archivo-Black", size: 15))
+                    .foregroundStyle(chipForeground)
+            }
+            .frame(width: 38, height: 38)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(isRestDay ? "Riposo" : day.title)
+                    .font(.custom("Archivo-ExtraBold", size: 15))
+                    .foregroundStyle(isCompleted || isRestDay ? DesignSystem.Colors.txtSecondary : DesignSystem.Colors.txtPrimary)
+                Text("\(day.exercises.count) esercizi · ~\(max(day.exercises.count * 8, 25)) min")
+                    .font(DesignSystem.Typography.bodySM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+            Spacer()
+            if isCompleted {
+                Text("Completato")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.limeDark)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(DesignSystem.Colors.lime.opacity(0.18))
+                    .clipShape(Capsule())
+            } else if !isRestDay {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var isRestDay: Bool {
+        day.exercises.isEmpty
+    }
+
+    private var chipText: String {
+        if isCompleted { return "✓" }
+        if isRestDay { return "." }
+        return "\(day.dayIndex)"
+    }
+
+    private var chipColor: Color {
+        if isCompleted { return DesignSystem.Colors.lime }
+        if isRestDay { return DesignSystem.Colors.bgLine }
+        return DesignSystem.Colors.lime
+    }
+
+    private var chipForeground: Color {
+        isRestDay ? DesignSystem.Colors.txtSecondary : .white
+    }
+}
+
+struct ClientWorkoutDetailView: View {
+    @Environment(\.dismiss) private var dismiss
+    let client: Client
+    let services: AppServices
+    let day: WorkoutDay
+    let isCompleted: Bool
+    let onToggleCompleted: () -> Void
+
+    @State private var completedExerciseIDs: Set<UUID> = []
+    @State private var editingWeight: Exercise?
+    @State private var showingNotes: Exercise?
+    @State private var showCompletionOverlay = false
+
+    var body: some View {
+        ZStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("SETTIMANA 1 DI 1")
+                            .font(DesignSystem.Typography.sectionLabel())
+                            .tracking(1.8)
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        Spacer()
+                        Text("\(completedCount)/\(totalCount)")
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.limeDark)
+                    }
+
+                    Text(day.title)
+                        .font(DesignSystem.Typography.titleLG())
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+
+                    HStack(spacing: 10) {
+                        stat("Esercizi", "\(totalCount)", DesignSystem.Colors.indigo)
+                        stat("Minuti", "\(max(totalCount * 8, 25))", DesignSystem.Colors.amber)
+                        stat("Fatti", "\(completedCount)/\(totalCount)", DesignSystem.Colors.limeDark)
+                    }
+
+                    SectionLabel(text: "Esercizi")
+
+                    LazyVStack(spacing: 12) {
+                        ForEach(day.exercises.sorted { $0.order < $1.order }) { exercise in
+                            ClientExerciseCard(
+                                exercise: exercise,
+                                index: exercise.order,
+                                state: state(for: exercise),
+                                onComplete: { complete(exercise) },
+                                onWeight: { editingWeight = exercise },
+                                onNotes: { showingNotes = exercise }
+                            )
+                        }
                     }
                 }
+                .padding(20)
+            }
 
-                SectionCard(title: "Esercizi", icon: "dumbbell") {
-                    ForEach(day.exercises.sorted { $0.order < $1.order }) { exercise in
-                        WorkoutExerciseRow(exercise: exercise)
-                        Divider().background(AppColors.divider)
+            if showCompletionOverlay {
+                WorkoutCompletionOverlay(exerciseCount: totalCount, minutes: max(totalCount * 8, 25)) {
+                    onToggleCompleted()
+                    dismiss()
+                }
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .navigationTitle("‹ Giorni")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $editingWeight) { exercise in
+            WeightEditSheet(exercise: exercise) { newWeight in
+                Task {
+                    await services.workoutService.addExerciseWeightHistory(
+                        trainerID: client.trainerID,
+                        clientID: client.id,
+                        exerciseID: exercise.id,
+                        weightKg: newWeight,
+                        effectiveFromSessionID: nil
+                    )
+                }
+            }
+                .presentationDetents([.medium])
+        }
+        .sheet(item: $showingNotes) { exercise in
+            ExerciseNotesSheet(exercise: exercise)
+                .presentationDetents([.medium])
+        }
+        .appScreen()
+    }
+
+    private func stat(_ title: String, _ value: String, _ color: Color) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(value)
+                    .font(.custom("Archivo-Black", size: 21))
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var totalCount: Int { day.exercises.count }
+    private var completedCount: Int { completedExerciseIDs.count }
+
+    private func state(for exercise: Exercise) -> ClientExerciseCard.State {
+        if completedExerciseIDs.contains(exercise.id) { return .completed }
+        let sorted = day.exercises.sorted { $0.order < $1.order }
+        let firstOpen = sorted.first { !completedExerciseIDs.contains($0.id) }
+        return firstOpen?.id == exercise.id ? .current : .future
+    }
+
+    private func complete(_ exercise: Exercise) {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+            completedExerciseIDs.insert(exercise.id)
+            showCompletionOverlay = completedExerciseIDs.count == totalCount && totalCount > 0
+        }
+    }
+}
+
+private struct ClientExerciseCard: View {
+    enum State {
+        case completed
+        case current
+        case future
+    }
+
+    let exercise: Exercise
+    let index: Int
+    let state: State
+    let onComplete: () -> Void
+    let onWeight: () -> Void
+    let onNotes: () -> Void
+
+    var body: some View {
+        FitCard(border: border, lineWidth: state == .current ? 2 : 1) {
+            HStack(alignment: .center, spacing: 12) {
+                Text(state == .completed ? "✓" : "\(index)")
+                    .font(.custom("Archivo-Black", size: 14))
+                    .foregroundStyle(.white)
+                    .frame(width: 34, height: 34)
+                    .background(state == .completed ? DesignSystem.Colors.lime.opacity(0.55) : DesignSystem.Colors.limeDark)
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Button(action: onNotes) {
+                        Text(exercise.name)
+                            .font(.custom("Archivo-ExtraBold", size: 15))
+                            .foregroundStyle(state == .completed ? DesignSystem.Colors.txtSecondary : DesignSystem.Colors.txtPrimary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .buttonStyle(.plain)
+
+                    HStack(spacing: 4) {
+                        Text("\(exercise.sets) x \(exercise.reps) ·")
+                        Button(action: onWeight) {
+                            HStack(spacing: 3) {
+                                Text(exercise.recommendedLoad)
+                                Image(systemName: "pencil")
+                            }
+                            .foregroundStyle(DesignSystem.Colors.limeDark)
+                        }
+                        .buttonStyle(.plain)
+                        Text("· rec \(exercise.restSeconds)s")
+                    }
+                    .font(DesignSystem.Typography.bodySM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+
+                if state == .current {
+                    Button(action: onComplete) {
+                        Image(systemName: "play.fill")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            .frame(width: 42, height: 34)
+                            .background(Color(hex: "EEF1F4"))
+                            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .opacity(state == .completed ? 0.55 : 1)
+        .shadow(color: state == .current ? DesignSystem.Colors.lime.opacity(0.16) : .clear, radius: 12, x: 0, y: 6)
+    }
+
+    private var border: Color {
+        state == .current ? DesignSystem.Colors.lime : DesignSystem.Colors.bgLine
+    }
+}
+
+private struct WeightEditSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let exercise: Exercise
+    let onSave: (Double) -> Void
+    @State private var weight: Double = 30
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Capsule()
+                .fill(DesignSystem.Colors.bgLine)
+                .frame(width: 46, height: 5)
+            Text(exercise.name)
+                .font(DesignSystem.Typography.titleMD())
+                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+            HStack(spacing: 22) {
+                stepButton("-") { weight = max(0, weight - 1.25) }
+                Text("\(weight, specifier: "%.2f") kg")
+                    .font(.custom("Archivo-Black", size: 36))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                stepButton("+") { weight += 1.25 }
+            }
+            Text("La modifica si applica da questo allenamento in poi. Le sessioni precedenti non vengono modificate.")
+                .font(DesignSystem.Typography.bodySM())
+                .italic()
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                .multilineTextAlignment(.center)
+            AccentButton(title: "Salva", color: DesignSystem.Colors.limeDark) {
+                onSave(weight)
+                dismiss()
+            }
+            Button("Annulla") { dismiss() }
+                .font(DesignSystem.Typography.labelMD())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+        }
+        .padding(24)
+        .appScreen()
+        .onAppear {
+            weight = Double(exercise.recommendedLoad.filter { "0123456789.,".contains($0) }.replacingOccurrences(of: ",", with: ".")) ?? 30
+        }
+    }
+
+    private func stepButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title)
+                .font(.custom("Archivo-Black", size: 26))
+                .foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(DesignSystem.Colors.limeDark)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct ExerciseNotesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    let exercise: Exercise
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Capsule()
+                .fill(DesignSystem.Colors.bgLine)
+                .frame(width: 46, height: 5)
+                .frame(maxWidth: .infinity)
+            Text(exercise.name)
+                .font(DesignSystem.Typography.titleMD())
+                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+            Text("\(exercise.sets) x \(exercise.reps) · \(exercise.recommendedLoad) · rec \(exercise.restSeconds)s")
+                .font(DesignSystem.Typography.labelMD())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            if !exercise.technicalNotes.isEmpty {
+                SectionLabel(text: "Note del coach")
+                HStack(alignment: .top, spacing: 10) {
+                    AvatarView(initials: "MC", gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.teal], size: 32)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Marco")
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text(exercise.technicalNotes)
+                            .font(DesignSystem.Typography.bodyMD())
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
                     }
                 }
             }
-            .padding(AppSpacing.lg)
+            Spacer()
         }
-        .navigationTitle("Allenamento")
+        .padding(24)
         .appScreen()
+    }
+}
+
+private struct WorkoutCompletionOverlay: View {
+    let exerciseCount: Int
+    let minutes: Int
+    let onHome: () -> Void
+    @State private var animate = false
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.72).ignoresSafeArea()
+            VStack(spacing: 18) {
+                Circle()
+                    .fill(DesignSystem.Colors.limeBg)
+                    .frame(width: 110, height: 110)
+                    .scaleEffect(animate ? 1.08 : 0.76)
+                    .opacity(animate ? 1 : 0.6)
+                    .overlay(Text("✓").font(.system(size: 58, weight: .black)).foregroundStyle(DesignSystem.Colors.limeDark))
+                Text("Allenamento completato!")
+                    .font(.custom("Archivo-Black", size: 30))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                Text("\(exerciseCount) esercizi · \(minutes) min")
+                    .font(DesignSystem.Typography.bodyMD())
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(DesignSystem.Colors.bgCard)
+                    .clipShape(Capsule())
+                Text("3 giorni di fila!")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.amber)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(DesignSystem.Colors.amberBg)
+                    .clipShape(Capsule())
+                PrimaryButton(title: "Torna alla home", action: onHome)
+                Button("Vedi riepilogo") {}
+                    .font(DesignSystem.Typography.bodyMD())
+                    .foregroundStyle(.white.opacity(0.72))
+            }
+            .padding(28)
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.62).repeatCount(2, autoreverses: true)) {
+                animate = true
+            }
+        }
     }
 }
 
 struct ClientNutritionView: View {
     @StateObject private var viewModel: ClientNutritionViewModel
+    let client: Client
 
     init(client: Client, services: AppServices) {
+        self.client = client
         _viewModel = StateObject(wrappedValue: ClientNutritionViewModel(client: client, service: services.nutritionService))
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    if let plan = viewModel.activePlan {
-                        SectionCard(title: "Piano attivo", icon: "fork.knife") {
-                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.sm) {
-                                MacroNutrientCard(title: "Calorie", value: "\(plan.dailyCalories)", color: AppColors.accent)
-                                MacroNutrientCard(title: "Proteine", value: "\(plan.proteinGrams) g", color: AppColors.success)
-                                MacroNutrientCard(title: "Carboidrati", value: "\(plan.carbohydrateGrams) g", color: AppColors.violet)
-                                MacroNutrientCard(title: "Grassi", value: "\(plan.fatGrams) g", color: AppColors.warning)
-                            }
-                            Text(plan.notes)
-                                .font(.caption)
-                                .foregroundStyle(AppColors.textSecondary)
-                        }
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("OBIETTIVO · \(client.goal.isEmpty ? "Percorso" : client.goal)")
+                        .font(DesignSystem.Typography.sectionLabel())
+                        .tracking(1.8)
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Text("La tua dieta")
+                        .font(DesignSystem.Typography.titleLG())
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
 
-                        ForEach(plan.meals) { meal in
-                            SectionCard(title: meal.name, icon: "clock") {
-                                Text(meal.time.formattedTime())
-                                    .font(.caption)
-                                    .foregroundStyle(AppColors.textSecondary)
-                                ForEach(meal.foods) { food in
-                                    HStack {
-                                        Text(food.name)
-                                        Spacer()
-                                        Text(food.quantity)
-                                            .foregroundStyle(AppColors.textSecondary)
-                                    }
-                                    .font(.subheadline)
+                    if let plan = viewModel.activePlan {
+                        nutritionSummary(plan)
+                        LazyVStack(spacing: 12) {
+                            ForEach(days, id: \.offset) { item in
+                                NavigationLink {
+                                    DietDayDetailView(plan: plan, dayOffset: item.offset)
+                                } label: {
+                                    dietDayCard(title: item.title, offset: item.offset, plan: plan)
                                 }
-                                if !meal.notes.isEmpty {
-                                    Text(meal.notes)
-                                        .font(.caption)
-                                        .foregroundStyle(AppColors.textSecondary)
-                                }
+                                .buttonStyle(.plain)
                             }
                         }
                     } else {
                         EmptyStateView(title: "Nessun piano attivo", message: "Il trainer non ha ancora pubblicato un piano alimentare.", icon: "fork.knife")
                     }
                 }
-                .padding(AppSpacing.lg)
+                .padding(20)
             }
-            .navigationTitle("Nutrizione")
+            .navigationTitle("Dieta")
+            .navigationBarTitleDisplayMode(.inline)
             .appScreen()
             .task { viewModel.load() }
         }
     }
+
+    private func nutritionSummary(_ plan: NutritionPlan) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Piano settimanale")
+                    .font(.custom("Archivo-ExtraBold", size: 16))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text("\(plan.dailyCalories) kcal")
+                    .font(.custom("Archivo-ExtraBold", size: 24))
+                    .foregroundStyle(DesignSystem.Colors.teal)
+                HStack {
+                    macro("P", "\(plan.proteinGrams)g", DesignSystem.Colors.teal)
+                    macro("C", "\(plan.carbohydrateGrams)g", DesignSystem.Colors.amber)
+                    macro("G", "\(plan.fatGrams)g", DesignSystem.Colors.limeDark)
+                }
+            }
+        }
+    }
+
+    private func macro(_ label: String, _ value: String, _ color: Color) -> some View {
+        Text("\(label): \(value)")
+            .font(DesignSystem.Typography.labelSM())
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func dietDayCard(title: String, offset: Int, plan: NutritionPlan) -> some View {
+        let isToday = offset == 0
+        let isPast = offset < 0
+        return FitCard(background: isPast ? DesignSystem.Colors.limeBg : DesignSystem.Colors.bgCard, border: isToday ? DesignSystem.Colors.teal : (isPast ? DesignSystem.Colors.lime : DesignSystem.Colors.bgLine), lineWidth: isToday ? 2 : 1) {
+            HStack(spacing: 12) {
+                Text(isPast ? "✓" : "\(offset + 4)")
+                    .font(.custom("Archivo-Black", size: 14))
+                    .foregroundStyle(isToday || isPast ? .white : DesignSystem.Colors.txtSecondary)
+                    .frame(width: 36, height: 36)
+                    .background(isToday ? DesignSystem.Colors.teal : (isPast ? DesignSystem.Colors.lime : DesignSystem.Colors.bgLine))
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(title)
+                            .font(.custom("Archivo-ExtraBold", size: 15))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        if isToday {
+                            Text("OGGI")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.teal)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(DesignSystem.Colors.tealBg)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    Text("\(plan.meals.count) pasti")
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                Spacer()
+                Text(isToday ? "\(plan.dailyCalories) kcal" : "\(plan.dailyCalories) kcal")
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(isToday ? DesignSystem.Colors.teal : DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var days: [(offset: Int, title: String)] {
+        (-3...3).map { offset in
+            let date = Calendar.current.date(byAdding: .day, value: offset, to: Date()) ?? Date()
+            return (offset, date.formatted(.dateTime.weekday(.wide)))
+        }
+    }
+}
+
+private struct DietDayDetailView: View {
+    let plan: NutritionPlan
+    let dayOffset: Int
+    @State private var checkedMealIDs: Set<UUID> = []
+    @State private var selectedMeal: Meal?
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("OBIETTIVO · \(plan.targetWeightKg, specifier: "%.1f") KG")
+                    .font(DesignSystem.Typography.sectionLabel())
+                    .tracking(1.8)
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                Text("La tua dieta")
+                    .font(DesignSystem.Typography.titleLG())
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+
+                calorieRing
+                HStack(spacing: 10) {
+                    macroCard("Proteine", consumedMacro(plan.proteinGrams), DesignSystem.Colors.teal)
+                    macroCard("Carbo", consumedMacro(plan.carbohydrateGrams), DesignSystem.Colors.amber)
+                    macroCard("Grassi", consumedMacro(plan.fatGrams), DesignSystem.Colors.limeDark)
+                }
+
+                SectionLabel(text: "Pasti di oggi")
+                LazyVStack(spacing: 12) {
+                    ForEach(plan.meals) { meal in
+                        mealCard(meal)
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("‹ Dieta")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selectedMeal) { meal in
+            MealDetailSheet(meal: meal, kcal: mealKcal)
+                .presentationDetents([.fraction(0.72)])
+        }
+        .appScreen()
+    }
+
+    private var calorieRing: some View {
+        FitCard {
+            HStack(spacing: 18) {
+                FitProgressRing(
+                    progress: Double(consumedKcal) / Double(max(plan.dailyCalories, 1)),
+                    color: DesignSystem.Colors.teal,
+                    lineWidth: 12,
+                    content: AnyView(
+                        VStack(spacing: 1) {
+                            Text("\(consumedKcal)")
+                                .font(.custom("Archivo-Black", size: 24))
+                                .foregroundStyle(DesignSystem.Colors.teal)
+                            Text("/\(plan.dailyCalories) kcal")
+                                .font(.custom("Sora-Regular", size: 10))
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                    )
+                )
+                .frame(width: 106, height: 106)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Oggi hai assunto")
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Text("\(remainingKcal) kcal rimaste")
+                        .font(.custom("Archivo-ExtraBold", size: 20))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(remainingKcal >= 0 ? "in linea" : "attenzione")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(remainingKcal >= 0 ? DesignSystem.Colors.teal : DesignSystem.Colors.amber)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(remainingKcal >= 0 ? DesignSystem.Colors.tealBg : DesignSystem.Colors.amberBg)
+                        .clipShape(Capsule())
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private func macroCard(_ title: String, _ value: Int, _ color: Color) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("\(value)g")
+                    .font(.custom("Archivo-Black", size: 19))
+                    .foregroundStyle(color)
+                Text(title)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private func mealCard(_ meal: Meal) -> some View {
+        let checked = checkedMealIDs.contains(meal.id)
+        let disabled = dayOffset != 0
+        return Button { selectedMeal = meal } label: {
+            FitCard {
+                HStack(alignment: .top, spacing: 12) {
+                    Text("🍽")
+                        .font(.title3)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text(meal.name)
+                                .font(.custom("Archivo-ExtraBold", size: 15))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            Spacer()
+                            Text("\(mealKcal) kcal")
+                                .font(DesignSystem.Typography.labelMD())
+                                .foregroundStyle(DesignSystem.Colors.teal)
+                        }
+                        Text(meal.foods.map(\.name).joined(separator: ", "))
+                            .font(DesignSystem.Typography.bodySM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            .lineLimit(1)
+                    }
+                    Button {
+                        guard !disabled else { return }
+                        withAnimation(.easeInOut(duration: 0.4)) {
+                            if checked {
+                                checkedMealIDs.remove(meal.id)
+                            } else {
+                                checkedMealIDs.insert(meal.id)
+                            }
+                        }
+                    } label: {
+                        Image(systemName: checked ? "checkmark.circle.fill" : "circle")
+                            .font(.title3.weight(.semibold))
+                            .foregroundStyle(checked ? DesignSystem.Colors.teal : DesignSystem.Colors.bgLine)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .opacity(disabled ? 0.55 : 1)
+    }
+
+    private var mealKcal: Int {
+        max(plan.dailyCalories / max(plan.meals.count, 1), 1)
+    }
+
+    private var consumedKcal: Int {
+        checkedMealIDs.count * mealKcal
+    }
+
+    private var remainingKcal: Int {
+        plan.dailyCalories - consumedKcal
+    }
+
+    private func consumedMacro(_ total: Int) -> Int {
+        Int(Double(total) * Double(checkedMealIDs.count) / Double(max(plan.meals.count, 1)))
+    }
+}
+
+private struct MealDetailSheet: View {
+    let meal: Meal
+    let kcal: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Capsule()
+                .fill(DesignSystem.Colors.bgLine)
+                .frame(width: 46, height: 5)
+                .frame(maxWidth: .infinity)
+            HStack {
+                Text("🍽")
+                    .font(.title)
+                Text(meal.name)
+                    .font(DesignSystem.Typography.titleLG())
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Spacer()
+                Text("\(kcal) kcal")
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(DesignSystem.Colors.teal)
+            }
+            SectionLabel(text: "Alimenti")
+            ForEach(meal.foods) { food in
+                HStack(alignment: .top) {
+                    Text(food.name)
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Spacer()
+                    Text(food.quantity)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                Divider().background(DesignSystem.Colors.bgLine)
+            }
+            if !meal.notes.isEmpty {
+                SectionLabel(text: "Note del coach")
+                Text(meal.notes)
+                    .font(DesignSystem.Typography.bodyMD())
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+            }
+            Spacer()
+        }
+        .padding(24)
+        .appScreen()
+    }
 }
 
 struct ClientProgressView: View {
+    enum Mode: String, CaseIterable, Hashable {
+        case measures = "Peso & Misure"
+        case exercises = "Esercizi"
+    }
+
     @StateObject private var viewModel: ClientProgressViewModel
+    @StateObject private var workoutViewModel: ClientWorkoutViewModel
     @State private var showingAdd = false
+    @State private var mode: Mode = .measures
+    @State private var expandedExerciseID: UUID?
     let client: Client
 
     init(client: Client, services: AppServices) {
         self.client = client
         _viewModel = StateObject(wrappedValue: ClientProgressViewModel(client: client, service: services.progressService))
+        _workoutViewModel = StateObject(wrappedValue: ClientWorkoutViewModel(client: client, service: services.workoutService))
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    if viewModel.entries.isEmpty {
-                        EmptyStateView(title: "Nessun progresso", message: "Registra peso, misure e foto per monitorare il percorso.", icon: "camera.metering.matrix")
+                VStack(alignment: .leading, spacing: 16) {
+                    SegmentedPicker(options: Mode.allCases, selection: $mode, title: \.rawValue, accent: DesignSystem.Colors.limeDark)
+
+                    if mode == .measures {
+                        measuresView
                     } else {
-                        ForEach(viewModel.entries) { entry in
-                            SectionCard(title: entry.date.formattedDay(), icon: "chart.line.uptrend.xyaxis") {
-                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.sm) {
-                                    MacroNutrientCard(title: "Peso", value: String(format: "%.1f kg", entry.weightKg), color: AppColors.success)
-                                    MacroNutrientCard(title: "Vita", value: String(format: "%.0f cm", entry.waistCm), color: AppColors.accent)
-                                    MacroNutrientCard(title: "Petto", value: String(format: "%.0f cm", entry.chestCm), color: AppColors.violet)
-                                    MacroNutrientCard(title: "Gamba", value: String(format: "%.0f cm", entry.legCm), color: AppColors.warning)
-                                }
-                                HStack(spacing: AppSpacing.md) {
-                                    ProgressPhotoCard(title: "Fronte", photoName: entry.frontPhotoName)
-                                    ProgressPhotoCard(title: "Lato", photoName: entry.sidePhotoName)
-                                    ProgressPhotoCard(title: "Retro", photoName: entry.backPhotoName)
-                                }
-                                Text(entry.notes)
-                                    .font(.caption)
-                                    .foregroundStyle(AppColors.textSecondary)
-                            }
-                        }
+                        exercisesView
                     }
                 }
-                .padding(AppSpacing.lg)
+                .padding(20)
             }
             .navigationTitle("Progressi")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingAdd = true } label: { Image(systemName: "plus") }
+                    Button("+ Nuovo") { showingAdd = true }
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.limeDark)
                 }
             }
             .sheet(isPresented: $showingAdd) {
                 AddProgressEntryView(client: client, onSave: viewModel.addEntry)
             }
             .appScreen()
-            .task { viewModel.load() }
+            .task {
+                viewModel.load()
+                workoutViewModel.load()
+            }
         }
     }
+
+    private var measuresView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 10) {
+                miniStat(icon: "scalemass.fill", color: DesignSystem.Colors.limeDark, value: "\(client.currentWeightKg, specifier: "%.1f")kg", subtitle: "peso attuale")
+                miniStat(icon: "chart.bar.fill", color: DesignSystem.Colors.amber, value: deltaText, subtitle: "dall'inizio · giorni")
+            }
+
+            FitCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    HStack {
+                        Text(minWeightText)
+                        Spacer()
+                        Text(maxWeightText)
+                    }
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+
+                    Chart(weightChartPoints) { entry in
+                        BarMark(
+                            x: .value("Settimana", entry.label),
+                            y: .value("Peso", entry.weight)
+                        )
+                        .foregroundStyle(
+                            LinearGradient(colors: [DesignSystem.Colors.lime, DesignSystem.Colors.limeDark], startPoint: .top, endPoint: .bottom)
+                        )
+                        .cornerRadius(6)
+                    }
+                    .chartYAxis(.hidden)
+                    .frame(height: 170)
+                }
+            }
+
+            SectionLabel(text: "Foto")
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                ForEach(0..<5, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(Color(hex: "EEF1F4"))
+                        .aspectRatio(0.8, contentMode: .fit)
+                        .overlay(Image(systemName: "camera.fill").foregroundStyle(DesignSystem.Colors.txtSecondary))
+                }
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(DesignSystem.Colors.bgCard)
+                    .aspectRatio(0.8, contentMode: .fit)
+                    .overlay(Text("+").font(.system(size: 28, weight: .semibold)).foregroundStyle(DesignSystem.Colors.txtSecondary))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .stroke(DesignSystem.Colors.bgLine, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+                    )
+            }
+        }
+    }
+
+    private var exercisesView: some View {
+        LazyVStack(spacing: 12) {
+            ForEach(uniqueExercises) { exercise in
+                Button {
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                        expandedExerciseID = expandedExerciseID == exercise.id ? nil : exercise.id
+                    }
+                } label: {
+                    FitCard {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(exercise.name)
+                                        .font(.custom("Archivo-ExtraBold", size: 15))
+                                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                    Text("Ultimo: \(exercise.recommendedLoad) · S1")
+                                        .font(DesignSystem.Typography.bodySM())
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .rotationEffect(.degrees(expandedExerciseID == exercise.id ? 90 : 0))
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                            if expandedExerciseID == exercise.id {
+                                exerciseChart(exercise)
+                            }
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func exerciseChart(_ exercise: Exercise) -> some View {
+        let data = Array(weightEntries.enumerated()).map { (index, entry) in
+            ExerciseProgressPoint(label: "S\(index + 1)", weight: entry.weightKg + Double(index) * 0.4)
+        }
+        return VStack(alignment: .leading, spacing: 10) {
+            if data.count > 1 {
+                Chart(data) { point in
+                    LineMark(x: .value("Sessione", point.label), y: .value("Kg", point.weight))
+                        .foregroundStyle(DesignSystem.Colors.lime)
+                    PointMark(x: .value("Sessione", point.label), y: .value("Kg", point.weight))
+                        .foregroundStyle(DesignSystem.Colors.lime)
+                }
+                .chartYScale(domain: .automatic(includesZero: false))
+                .frame(height: 170)
+            } else {
+                Text("Solo una sessione registrata — continua ad allenarti per vedere il progresso")
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 22)
+            }
+            HStack {
+                Text("Inizio: \(data.first?.weight ?? 0, specifier: "%.1f")kg")
+                Spacer()
+                Text("Attuale: \(data.last?.weight ?? 0, specifier: "%.1f")kg")
+                    .foregroundStyle(DesignSystem.Colors.limeDark)
+                Spacer()
+                TrendBadge(value: "+\(max((data.last?.weight ?? 0) - (data.first?.weight ?? 0), 0), specifier: "%.1f")kg")
+            }
+            .font(DesignSystem.Typography.labelSM())
+            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+        }
+    }
+
+    private func miniStat(icon: String, color: Color, value: String, subtitle: String) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 8) {
+                FitIconChip(systemName: icon, color: color, background: color.opacity(0.12), size: 32)
+                Text(value)
+                    .font(.custom("Archivo-Black", size: 26))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                Text(subtitle)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var weightEntries: [ProgressEntry] {
+        let entries = viewModel.entries.sorted { $0.date < $1.date }
+        return entries.isEmpty ? [ProgressEntry(id: UUID(), clientID: client.id, date: Date(), weightKg: client.currentWeightKg, waistCm: 0, chestCm: 0, armCm: 0, legCm: 0, frontPhotoName: nil, sidePhotoName: nil, backPhotoName: nil, notes: "")] : entries
+    }
+
+    private var weightChartPoints: [ExerciseProgressPoint] {
+        Array(weightEntries.enumerated()).map { index, entry in
+            ExerciseProgressPoint(label: "S\(index + 1)", weight: entry.weightKg)
+        }
+    }
+
+    private var uniqueExercises: [Exercise] {
+        var seen = Set<String>()
+        return workoutViewModel.activePlan?.days.flatMap(\.exercises).filter { seen.insert($0.name).inserted } ?? []
+    }
+
+    private var minWeightText: String {
+        "\(weightEntries.map(\.weightKg).min() ?? client.currentWeightKg, specifier: "%.1f") kg"
+    }
+
+    private var maxWeightText: String {
+        "\(weightEntries.map(\.weightKg).max() ?? client.currentWeightKg, specifier: "%.1f") kg"
+    }
+
+    private var deltaText: String {
+        let delta = client.currentWeightKg - client.initialWeightKg
+        return "\(delta, specifier: "%+.1f")kg"
+    }
+}
+
+private struct ExerciseProgressPoint: Identifiable {
+    var id: String { label }
+    let label: String
+    let weight: Double
+}
+
+struct ClientProfileView: View {
+    @EnvironmentObject private var authViewModel: AuthViewModel
+    let client: Client
+
+    init(client: Client, services: AppServices) {
+        self.client = client
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 18) {
+                VStack(spacing: 10) {
+                    AvatarView(initials: initials, gradient: [DesignSystem.Colors.lime, DesignSystem.Colors.teal], size: 70)
+                    Text(client.fullName)
+                        .font(DesignSystem.Typography.titleMD())
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(client.email.isEmpty ? client.phone : client.email)
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                .frame(maxWidth: .infinity)
+
+                FitCard {
+                    VStack(spacing: 0) {
+                        profileRow("Altezza", "\(client.heightCm, specifier: "%.0f") cm")
+                        Divider().background(DesignSystem.Colors.bgLine)
+                        profileRow("Peso iniziale", "\(client.initialWeightKg, specifier: "%.1f") kg")
+                        Divider().background(DesignSystem.Colors.bgLine)
+                        profileRow("Peso attuale", "\(client.currentWeightKg, specifier: "%.1f") kg", valueColor: DesignSystem.Colors.limeDark)
+                        Divider().background(DesignSystem.Colors.bgLine)
+                        profileRow("Obiettivo", client.goal)
+                        Divider().background(DesignSystem.Colors.bgLine)
+                        profileRow("Coach", "Marco")
+                    }
+                }
+
+                SectionLabel(text: "Account")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                menuRow(icon: "bell.fill", title: "Notifiche")
+                menuRow(icon: "heart.fill", title: "App Salute")
+                Button {
+                    authViewModel.logout()
+                } label: {
+                    FitCard {
+                        HStack {
+                            FitIconChip(systemName: "rectangle.portrait.and.arrow.right", color: DesignSystem.Colors.txtSecondary, background: DesignSystem.Colors.bgLine.opacity(0.6), size: 34)
+                            Text("Esci")
+                                .font(.custom("Archivo-ExtraBold", size: 15))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            Spacer()
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+        }
+        .navigationTitle("‹ Oggi")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    private func profileRow(_ label: String, _ value: String, valueColor: Color = DesignSystem.Colors.txtPrimary) -> some View {
+        HStack {
+            Text(label)
+                .font(DesignSystem.Typography.bodyMD())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            Spacer()
+            Text(value)
+                .font(DesignSystem.Typography.labelMD())
+                .foregroundStyle(valueColor)
+                .multilineTextAlignment(.trailing)
+        }
+        .padding(.vertical, 12)
+    }
+
+    private func menuRow(icon: String, title: String) -> some View {
+        FitCard {
+            HStack {
+                FitIconChip(systemName: icon, color: DesignSystem.Colors.limeDark, background: DesignSystem.Colors.limeBg, size: 34)
+                Text(title)
+                    .font(.custom("Archivo-ExtraBold", size: 15))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var initials: String {
+        "\(client.firstName.first.map(String.init) ?? "")\(client.lastName.first.map(String.init) ?? "")"
+    }
+}
+
+struct ClientChatView: View {
+    let client: Client
+    @State private var text = ""
+    @State private var messages: [LocalChatMessage] = [
+        LocalChatMessage(text: "Come sta andando questa settimana?", isMine: false, date: Date().addingTimeInterval(-3600)),
+        LocalChatMessage(text: "Bene, ho completato gli allenamenti.", isMine: true, date: Date().addingTimeInterval(-1800))
+    ]
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                chatHeader
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            Text("OGGI")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                .padding(.vertical, 8)
+                            ForEach(messages) { message in
+                                chatBubble(message)
+                                    .id(message.id)
+                            }
+                        }
+                        .padding(20)
+                    }
+                    .onAppear { scrollBottom(proxy) }
+                    .onChange(of: messages.count) { _, _ in scrollBottom(proxy) }
+                }
+                inputBar
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .appScreen()
+        }
+    }
+
+    private var chatHeader: some View {
+        HStack(spacing: 10) {
+            AvatarView(initials: "MC", gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.teal], size: 38)
+            Text("Marco · coach")
+                .font(.custom("Archivo-ExtraBold", size: 16))
+                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+            Spacer()
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(DesignSystem.Colors.bgMain)
+    }
+
+    private func chatBubble(_ message: LocalChatMessage) -> some View {
+        HStack {
+            if message.isMine { Spacer(minLength: 40) }
+            Text(message.text)
+                .font(DesignSystem.Typography.bodyMD())
+                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 11)
+                .background(message.isMine ? DesignSystem.Colors.limeBg : DesignSystem.Colors.bgCard)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(message.isMine ? Color(hex: "DDE7C2") : DesignSystem.Colors.bgLine, lineWidth: 1)
+                )
+            if !message.isMine { Spacer(minLength: 40) }
+        }
+    }
+
+    private var inputBar: some View {
+        HStack(spacing: 10) {
+            TextField("Scrivi a Marco…", text: $text)
+                .font(DesignSystem.Typography.bodyMD())
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+                .background(DesignSystem.Colors.bgCard)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(DesignSystem.Colors.bgLine, lineWidth: 1))
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(.white)
+                    .frame(width: 38, height: 38)
+                    .background(DesignSystem.Colors.limeDark)
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(16)
+        .background(DesignSystem.Colors.bgMain)
+    }
+
+    private func send() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        messages.append(LocalChatMessage(text: trimmed, isMine: true, date: Date()))
+        text = ""
+    }
+
+    private func scrollBottom(_ proxy: ScrollViewProxy) {
+        guard let id = messages.last?.id else { return }
+        DispatchQueue.main.async {
+            withAnimation(.easeOut(duration: 0.2)) {
+                proxy.scrollTo(id, anchor: .bottom)
+            }
+        }
+    }
+}
+
+private struct LocalChatMessage: Identifiable {
+    let id = UUID()
+    let text: String
+    let isMine: Bool
+    let date: Date
 }
 
 struct AddProgressEntryView: View {
@@ -521,41 +1488,75 @@ struct AddProgressEntryView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Misure") {
-                    TextField("Peso", value: $weight, format: .number)
-                        .keyboardType(.decimalPad)
-                    TextField("Vita", value: $waist, format: .number)
-                        .keyboardType(.decimalPad)
-                    TextField("Petto", value: $chest, format: .number)
-                        .keyboardType(.decimalPad)
-                    TextField("Braccio", value: $arm, format: .number)
-                        .keyboardType(.decimalPad)
-                    TextField("Gamba", value: $leg, format: .number)
-                        .keyboardType(.decimalPad)
-                }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    SectionLabel(text: "Misure")
+                    progressField("Peso", value: $weight, suffix: "kg")
+                    HStack(spacing: 10) {
+                        progressField("Vita", value: $waist, suffix: "cm")
+                        progressField("Fianchi", value: $chest, suffix: "cm")
+                    }
 
-                Section("Foto") {
-                    Label("Upload foto predisposto per cloud storage futuro", systemImage: "photo.badge.plus")
-                }
+                    SectionLabel(text: "Foto")
+                    HStack(spacing: 10) {
+                        photoSlot
+                        photoSlot
+                        photoSlot
+                    }
 
-                Section("Note") {
+                    SectionLabel(text: "Note")
                     TextEditor(text: $notes)
-                        .frame(minHeight: 100)
-                }
-            }
-            .navigationTitle("Nuovo progresso")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Annulla") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva") {
+                        .frame(minHeight: 120)
+                        .padding(10)
+                        .background(DesignSystem.Colors.bgCard)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(DesignSystem.Colors.bgLine, lineWidth: 1))
+
+                    AccentButton(title: "Salva progresso", color: DesignSystem.Colors.limeDark) {
                         onSave(weight, waist, chest, arm, leg, notes)
                         dismiss()
                     }
                 }
+                .padding(20)
+            }
+            .navigationTitle("Nuovo progresso")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla") { dismiss() }
+                }
+            }
+            .appScreen()
+        }
+    }
+
+    private func progressField(_ label: String, value: Binding<Double>, suffix: String) -> some View {
+        FitCard {
+            HStack {
+                Text(label)
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                Spacer()
+                TextField(label, value: value, format: .number)
+                    .keyboardType(.decimalPad)
+                    .font(.custom("Archivo-ExtraBold", size: 18))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    .multilineTextAlignment(.trailing)
+                Text(suffix)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
             }
         }
+    }
+
+    private var photoSlot: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(DesignSystem.Colors.bgCard)
+            .aspectRatio(1, contentMode: .fit)
+            .overlay(Image(systemName: "plus").foregroundStyle(DesignSystem.Colors.txtSecondary))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(DesignSystem.Colors.bgLine, style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            )
     }
 }

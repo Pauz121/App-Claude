@@ -69,6 +69,7 @@ final class ClientsViewModel: ObservableObject {
         guard !searchText.isEmpty else { return clients }
         return clients.filter {
             $0.fullName.localizedCaseInsensitiveContains(searchText) ||
+            $0.phone.localizedCaseInsensitiveContains(searchText) ||
             $0.email.localizedCaseInsensitiveContains(searchText) ||
             $0.goal.localizedCaseInsensitiveContains(searchText)
         }

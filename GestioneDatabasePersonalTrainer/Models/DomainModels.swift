@@ -47,6 +47,7 @@ struct Client: Identifiable, Codable, Hashable {
     var currentWeightKg: Double
     var goal: String
     var accessCode: String
+    var isRegistered: Bool = false
     var joinedAt: Date
     var trainerNotes: String
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import Charts
 
 struct TrainerMainTabView: View {
     @EnvironmentObject private var services: AppServices
@@ -7,31 +8,26 @@ struct TrainerMainTabView: View {
     var body: some View {
         TabView {
             TrainerDashboardView(trainer: trainer, services: services)
-                .tabItem { Label("Dashboard", systemImage: "chart.bar.xaxis") }
+                .tabItem { Label("Dashboard", systemImage: "square.grid.2x2.fill") }
 
             ClientsListView(trainer: trainer, services: services)
-                .tabItem { Label("Clienti", systemImage: "person.2") }
+                .tabItem { Label("Clienti", systemImage: "person.2.fill") }
 
             AppointmentsCalendarView(trainer: trainer, services: services)
                 .tabItem { Label("Agenda", systemImage: "calendar") }
 
-            MachinesListView(trainer: trainer, services: services)
-                .tabItem { Label("Macchine", systemImage: "dumbbell") }
+            TrainerMessagesView(trainer: trainer, services: services)
+                .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
+                .badge("")
 
-            WorkoutPlansListView(trainer: trainer, services: services)
-                .tabItem { Label("Schede", systemImage: "list.clipboard") }
-
-            NutritionPlansListView(trainer: trainer, services: services)
-                .tabItem { Label("Diete", systemImage: "fork.knife") }
-
-            SubscriptionView(trainer: trainer, services: services)
-                .tabItem { Label("Piano", systemImage: "creditcard") }
+            TrainerMenuView(trainer: trainer, services: services)
+                .tabItem { Label("", systemImage: "line.3.horizontal") }
         }
+        .tint(DesignSystem.Colors.indigo)
     }
 }
 
 struct TrainerDashboardView: View {
-    @EnvironmentObject private var authViewModel: AuthViewModel
     @StateObject private var viewModel: TrainerDashboardViewModel
     @State private var clients: [Client] = []
     @State private var showingAddClient = false
@@ -50,180 +46,157 @@ struct TrainerDashboardView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    trainerHeader
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    kpiGrid
 
-                    VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                        Text("Azioni rapide")
-                            .font(AppTypography.section)
-                            .foregroundStyle(AppColors.textPrimary)
-
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.sm) {
-                            QuickActionButton(title: "Nuovo cliente", systemImage: "person.badge.plus", color: AppColors.primaryBlack) {
-                                showingAddClient = true
-                            }
-                            QuickActionButton(title: "Nuovo appuntamento", systemImage: "calendar.badge.plus", color: AppColors.calendarBlue) {
-                                showingAddAppointment = true
-                            }
-                            QuickActionButton(title: "Nuova scheda", systemImage: "figure.run", color: AppColors.workoutBlack) {
-                                showingCreateWorkout = true
-                            }
-                            QuickActionButton(title: "Nuovo piano", systemImage: "fork.knife", color: AppColors.nutritionYellow) {
-                                showingCreateNutrition = true
-                            }
-                        }
-                    }
-
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.md) {
-                        StatCard(title: "Clienti attivi", value: "\(viewModel.clients.count)", icon: "person.2.fill", color: AppColors.primaryBlack)
-                        StatCard(title: "Oggi", value: "\(viewModel.appointmentsToday)", icon: "calendar.badge.clock", color: AppColors.calendarBlue)
-                        StatCard(title: "Schede attive", value: "\(viewModel.activePlans)", icon: "figure.run", color: AppColors.successGreen)
-                        StatCard(title: "Nuovi iscritti", value: "\(viewModel.newClientsThisMonth)", icon: "sparkles", color: AppColors.energyOrange)
-                    }
-
-                    compactWeekSummary
-
-                    SectionCard(title: "Agenda di oggi", icon: "calendar") {
-                        if today.isEmpty {
-                            EmptyStateView(
-                                title: "Giornata libera",
-                                message: "Non hai appuntamenti in agenda oggi.",
-                                icon: "calendar.badge.plus",
-                                actionTitle: "Aggiungi appuntamento"
-                            ) {
-                                showingAddAppointment = true
-                            }
-                        } else {
-                            ForEach(today) { appointment in
-                                AppointmentRowView(appointment: appointment, client: viewModel.clients.first(where: { $0.id == appointment.clientID }))
-                            }
-                        }
-                    }
-
-                    TrainerClientInsightsView(insights: viewModel.insights, isLoading: viewModel.isLoadingInsights)
-
-                    SectionCard(title: "Alert operativi", icon: "bell.badge") {
-                        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                            DashboardAlertRow(icon: "creditcard", title: "Piano \(trainer.subscriptionTier.rawValue)", subtitle: "Controlla trial, limiti clienti e upgrade.", color: AppColors.warningYellow)
-                            DashboardAlertRow(icon: "chart.line.uptrend.xyaxis", title: "\(viewModel.progressEntries.count) progressi registrati", subtitle: "Monitora i clienti che non aggiornano da tempo.", color: AppColors.progressGreen)
-                            DashboardAlertRow(icon: "clock", title: "\(viewModel.appointments.filter { $0.status == .scheduled }.count) sessioni programmate", subtitle: "Usa l'agenda per completare o annullare le sessioni.", color: AppColors.calendarBlue)
-                        }
-                    }
-                }
-                .padding(AppSpacing.lg)
-            }
-            .navigationTitle("Console")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        authViewModel.logout()
+                    NavigationLink {
+                        TrainerAlertListView(insights: viewModel.insights, clients: viewModel.clients)
                     } label: {
-                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                        feedbackAlertRow
                     }
+                    .buttonStyle(.plain)
+
+                    SectionLabel(text: "Azioni rapide")
+                    quickActions
                 }
+                .padding(20)
             }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingAddClient) {
                 AddClientView(client: makeEmptyClient()) { client in
-                    Task<Void, Never>(priority: nil) {
+                    Task {
                         _ = await services.clientService.createClient(client)
-                        viewModel.load()
-                        clients = await services.clientService.fetchClients(for: trainer.id)
+                        reload()
                     }
                 }
             }
             .sheet(isPresented: $showingAddAppointment) {
                 AddAppointmentView(trainer: trainer, clients: clients) { appointment in
-                    Task<Void, Never>(priority: nil) {
+                    Task {
                         _ = await services.appointmentService.createAppointment(appointment)
-                        viewModel.load()
+                        reload()
                     }
                 }
             }
             .sheet(isPresented: $showingCreateWorkout) {
                 CreateWorkoutPlanView(clients: clients, catalogService: services.catalogService) { client, name, goal in
                     WorkoutPlansViewModel(trainer: trainer, service: services.workoutService).createTemplatePlan(client: client, name: name, goal: goal)
-                    viewModel.load()
+                    reload()
                 }
             }
             .sheet(isPresented: $showingCreateNutrition) {
                 CreateNutritionPlanView(clients: clients, catalogService: services.catalogService) { client, calories, targetWeight in
                     NutritionPlansViewModel(trainer: trainer, service: services.nutritionService).createTemplatePlan(client: client, calories: calories, targetWeight: targetWeight)
-                    viewModel.load()
+                    reload()
                 }
             }
             .appScreen()
-            .task {
-                viewModel.load()
-                clients = await services.clientService.fetchClients(for: trainer.id)
-            }
+            .task { reload() }
         }
     }
 
-    private var trainerHeader: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Ciao, \(trainer.firstName)")
-                        .font(AppTypography.hero)
-                        .foregroundStyle(AppColors.textPrimary)
-                    Text(trainer.studioName)
-                        .font(AppTypography.body)
-                        .foregroundStyle(AppColors.textSecondary)
-                }
-                Spacer()
-                StatusBadge(text: trainer.subscriptionTier.rawValue, style: .trialing)
+    private var header: some View {
+        HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(trainer.studioName.uppercased())
+                    .font(DesignSystem.Typography.sectionLabel())
+                    .tracking(1.8)
+                    .foregroundStyle(DesignSystem.Colors.indigo)
+                Text("Ciao, \(trainer.firstName)")
+                    .font(.custom("Archivo-ExtraBold", size: 26))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
             }
-
-            HStack(spacing: AppSpacing.sm) {
-                Label("\(today.count) oggi", systemImage: "calendar")
-                Label("\(viewModel.clients.count) clienti", systemImage: "person.2")
-            }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(AppColors.textSecondary)
+            Spacer()
+            Text("PRO")
+                .font(DesignSystem.Typography.labelSM())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(DesignSystem.Colors.txtPrimary)
+                .clipShape(Capsule())
         }
-        .padding(.top, AppSpacing.sm)
     }
 
-    private var compactWeekSummary: some View {
-        SectionCard(title: "Settimana", icon: "calendar.day.timeline.left") {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AppSpacing.sm) {
-                    ForEach((-3...3).map { Date.daysFromNow($0) }, id: \.self) { date in
-                        let count = viewModel.appointments.filter { Calendar.current.isDate($0.startTime, inSameDayAs: date) }.count
-                        VStack(spacing: 7) {
-                            Text(date.formatted(.dateTime.weekday(.abbreviated)))
-                                .font(.caption2.weight(.semibold))
-                            Text(date.formatted(.dateTime.day()))
-                                .font(.headline)
-                            if count > 0 {
-                                Text("\(count)")
-                                    .font(.caption2.weight(.bold))
-                                    .foregroundStyle(.white)
-                                    .frame(width: 20, height: 20)
-                                    .background(AppColors.primaryBlack)
-                                    .clipShape(Circle())
-                            } else {
-                                Circle()
-                                    .fill(AppColors.border)
-                                    .frame(width: 6, height: 6)
-                            }
-                        }
-                        .foregroundStyle(Calendar.current.isDateInToday(date) ? AppColors.primaryBlack : AppColors.textSecondary)
-                        .frame(width: 58, height: 86)
-                        .background(Calendar.current.isDateInToday(date) ? AppColors.surfaceSecondary : AppColors.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: AppRadius.md, style: .continuous)
-                                .stroke(Calendar.current.isDateInToday(date) ? AppColors.primaryBlack : AppColors.border, lineWidth: 1)
-                        )
+    private var kpiGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            kpi(icon: "person.2.fill", iconBg: DesignSystem.Colors.indigoBg, iconColor: DesignSystem.Colors.indigo, value: "\(viewModel.clients.count)", label: "clienti attivi", trend: "+\(viewModel.newClientsThisMonth)")
+            kpi(icon: "calendar.badge.clock", iconBg: DesignSystem.Colors.amberBg, iconColor: DesignSystem.Colors.amber, value: "\(viewModel.appointmentsToday)", label: "sessioni oggi")
+            kpi(icon: "list.clipboard.fill", iconBg: DesignSystem.Colors.tealBg, iconColor: DesignSystem.Colors.teal, value: "\(viewModel.activePlans)", label: "schede attive")
+            kpi(icon: "sparkles", iconBg: DesignSystem.Colors.limeBg, iconColor: DesignSystem.Colors.limeDark, value: "\(viewModel.newClientsThisMonth)", label: "nuovi iscritti", trend: "+\(viewModel.newClientsThisMonth)")
+        }
+    }
+
+    private func kpi(icon: String, iconBg: Color, iconColor: Color, value: String, label: String, trend: String? = nil) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top) {
+                    FitIconChip(systemName: icon, color: iconColor, background: iconBg, size: 30)
+                    Spacer()
+                    if let trend {
+                        TrendBadge(value: trend)
                     }
                 }
+                Text(value)
+                    .font(.custom("Archivo-ExtraBold", size: 22))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text(label)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
             }
         }
     }
 
-    private var today: [Appointment] {
-        viewModel.appointments.filter { Calendar.current.isDateInToday($0.startTime) }
+    private var feedbackAlertRow: some View {
+        FitCard {
+            HStack(spacing: 12) {
+                FitIconChip(systemName: "exclamationmark.bubble.fill", color: DesignSystem.Colors.indigo, background: DesignSystem.Colors.indigoBg, size: 36)
+                Text("Feedback & Alert")
+                    .font(.custom("Archivo-ExtraBold", size: 15))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Spacer()
+                Text("\(viewModel.insights.count) nuovi")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.amber)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(DesignSystem.Colors.amberBg)
+                    .clipShape(Capsule())
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var quickActions: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+            quickAction("Nuovo cliente", "plus", action: { showingAddClient = true })
+            quickAction("Nuova scheda", "dumbbell.fill", action: { showingCreateWorkout = true })
+            quickAction("Nuovo piano", "fork.knife", action: { showingCreateNutrition = true })
+            quickAction("Appuntamento", "calendar.badge.plus", action: { showingAddAppointment = true })
+        }
+    }
+
+    private func quickAction(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            FitCard {
+                HStack(spacing: 10) {
+                    FitIconChip(systemName: icon, color: DesignSystem.Colors.indigo, background: DesignSystem.Colors.indigoBg, size: 34)
+                    Text(title)
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        .lineLimit(2)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func reload() {
+        viewModel.load()
+        Task { clients = await services.clientService.fetchClients(for: trainer.id) }
     }
 
     private func makeEmptyClient() -> Client {
@@ -246,28 +219,66 @@ struct TrainerDashboardView: View {
     }
 }
 
-private struct DashboardAlertRow: View {
-    let icon: String
-    let title: String
-    let subtitle: String
-    let color: Color
+struct TrainerAlertListView: View {
+    let insights: [TrainerClientInsight]
+    let clients: [Client]
 
     var body: some View {
-        HStack(spacing: AppSpacing.md) {
-            Image(systemName: icon)
-                .foregroundStyle(color)
-                .frame(width: 32, height: 32)
-                .background(color.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(AppColors.textPrimary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(AppColors.textSecondary)
-                    .lineLimit(2)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Feedback & Alert")
+                    .font(DesignSystem.Typography.titleLG())
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                LazyVStack(spacing: 12) {
+                    ForEach(insights) { insight in
+                        FitCard {
+                            HStack(spacing: 12) {
+                                AvatarView(initials: initials(for: insight.clientName), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.teal], size: 42)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(insight.clientName)
+                                        .font(.custom("Archivo-ExtraBold", size: 15))
+                                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                    Text(insight.message)
+                                        .font(DesignSystem.Typography.labelMD())
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                }
+                                Spacer()
+                                Image(systemName: insight.iconName)
+                                    .foregroundStyle(color(for: insight.severity))
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                        }
+                        .overlay(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(color(for: insight.severity))
+                                .frame(width: 3)
+                                .padding(.vertical, 14)
+                        }
+                    }
+                    if insights.isEmpty {
+                        EmptyStateView(title: "Nessun alert", message: "I feedback critici dei clienti appariranno qui.", icon: "bell")
+                    }
+                }
             }
+            .padding(20)
+        }
+        .navigationTitle("‹ Dashboard")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    private func initials(for name: String) -> String {
+        name.split(separator: " ").prefix(2).map { String($0.prefix(1)) }.joined()
+    }
+
+    private func color(for severity: InsightSeverity) -> Color {
+        switch severity {
+        case .info: return DesignSystem.Colors.indigo
+        case .success: return DesignSystem.Colors.lime
+        case .warning: return DesignSystem.Colors.amber
+        case .alert: return Color(hex: "E57373")
         }
     }
 }
@@ -284,33 +295,36 @@ struct ClientsListView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: AppSpacing.md) {
-                SearchBarView(text: $viewModel.searchText, placeholder: "Cerca cliente, email o obiettivo")
-                    .padding(.horizontal, AppSpacing.lg)
-
-                List {
-                    ForEach(viewModel.filteredClients) { client in
-                        NavigationLink {
-                            ClientDetailView(client: client, onSave: viewModel.save, onDelete: viewModel.delete)
-                        } label: {
-                            ClientRowView(client: client)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    SearchBarView(text: $viewModel.searchText, placeholder: "Cerca cliente, email o obiettivo")
+                    SectionLabel(text: "\(viewModel.filteredClients.count) attivi")
+                    LazyVStack(spacing: 12) {
+                        ForEach(viewModel.filteredClients) { client in
+                            NavigationLink {
+                                ClientDetailView(client: client, onSave: viewModel.save, onDelete: viewModel.delete)
+                            } label: {
+                                trainerClientRow(client)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .listRowBackground(AppColors.surface)
-                    }
-                    .onDelete { offsets in
-                        offsets.map { viewModel.filteredClients[$0] }.forEach(viewModel.delete)
                     }
                 }
-                .scrollContentBackground(.hidden)
+                .padding(20)
             }
             .navigationTitle("Clienti")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        showingAddClient = true
-                    } label: {
+                    Button { showingAddClient = true } label: {
                         Image(systemName: "plus")
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 38, height: 38)
+                            .background(DesignSystem.Colors.txtPrimary)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     }
+                    .buttonStyle(.plain)
                 }
             }
             .sheet(isPresented: $showingAddClient) {
@@ -320,111 +334,194 @@ struct ClientsListView: View {
             .task { viewModel.load() }
         }
     }
+
+    private func trainerClientRow(_ client: Client) -> some View {
+        FitCard {
+            HStack(spacing: 12) {
+                AvatarView(initials: initials(client), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime], size: 44)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(client.fullName)
+                        .font(.custom("Archivo-ExtraBold", size: 16))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text("\(client.goal.isEmpty ? "Obiettivo" : client.goal) · \(weeksSinceJoin(client)) settimane")
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                Spacer()
+                StatusPill(status: .active)
+            }
+        }
+    }
 }
 
 struct ClientDetailView: View {
     @EnvironmentObject private var services: AppServices
     @Environment(\.dismiss) private var dismiss
     @State private var showingEdit = false
-    @State private var inviteCode: String?
-    @State private var inviteError: String?
+    @State private var selectedTab: DetailTab = .schedule
+    @State private var workoutPlans: [WorkoutPlan] = []
+    @State private var nutritionPlans: [NutritionPlan] = []
+    @State private var progressEntries: [ProgressEntry] = []
     let client: Client
     let onSave: (Client) -> Void
     let onDelete: (Client) -> Void
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                SectionCard(title: client.fullName, icon: "person.crop.circle") {
-                    VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                        InfoLine(label: "Email", value: client.email)
-                        InfoLine(label: "Telefono", value: client.phone)
-                        InfoLine(label: "Obiettivo", value: client.goal)
-                        if let inviteError {
-                            Text(inviteError)
-                                .font(.caption)
-                                .foregroundStyle(AppColors.warning)
-                        }
-                        SecondaryButton(title: "Genera codice monouso", systemImage: "key.horizontal") {
-                            Task<Void, Never>(priority: nil) {
-                                do {
-                                    inviteCode = try await services.inviteCodeService.generateInviteCode(trainerID: client.trainerID, clientID: client.id)
-                                    inviteError = nil
-                                } catch {
-                                    inviteError = error.localizedDescription
-                                }
-                            }
-                        }
+            VStack(spacing: 18) {
+                VStack(spacing: 9) {
+                    AvatarView(initials: initials(client), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime], size: 70)
+                    Text(client.fullName)
+                        .font(DesignSystem.Typography.titleMD())
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(client.goal)
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    StatusPill(status: .active)
+                }
+                .frame(maxWidth: .infinity)
+
+                detailTabs
+
+                Group {
+                    switch selectedTab {
+                    case .schedule: scheduleTab
+                    case .diet: dietTab
+                    case .feedback: feedbackTab
+                    case .progress: progressTab
                     }
                 }
-
-                if let displayedInviteCode {
-                    InviteCodeView(code: displayedInviteCode)
-                }
-
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.md) {
-                    StatCard(title: "Altezza", value: String(format: "%.0f cm", client.heightCm), icon: "ruler", color: AppColors.accent)
-                    StatCard(title: "Peso attuale", value: String(format: "%.1f kg", client.currentWeightKg), icon: "scalemass", color: AppColors.success)
-                }
-
-                SectionCard(title: "Note trainer", icon: "note.text") {
-                    Text(client.trainerNotes.isEmpty ? "Nessuna nota." : client.trainerNotes)
-                        .font(AppTypography.body)
-                        .foregroundStyle(AppColors.textSecondary)
-                }
-
-                DestructiveButton(title: "Elimina cliente", systemImage: "trash") {
-                    onDelete(client)
-                    dismiss()
-                }
             }
-            .padding(AppSpacing.lg)
+            .padding(20)
         }
-        .navigationTitle("Dettaglio")
+        .navigationTitle("‹ Clienti")
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Modifica") { showingEdit = true }
+                Button { showingEdit = true } label: {
+                    Image(systemName: "pencil")
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
             }
         }
         .sheet(isPresented: $showingEdit) {
             AddClientView(client: client, onSave: onSave)
         }
         .appScreen()
-    }
-
-    private var displayedInviteCode: String? {
-        inviteCode ?? (client.accessCode.isEmpty ? nil : client.accessCode)
-    }
-}
-
-struct InviteCodeView: View {
-    let code: String
-
-    var body: some View {
-        SectionCard(title: "Codice invito", icon: "key.horizontal") {
-            Text(code)
-                .font(.system(size: 28, weight: .bold, design: .monospaced))
-                .foregroundStyle(AppColors.successGreen)
-            Text("Comunica questo codice al cliente. In produzione e monouso, con scadenza e audit.")
-                .font(.caption)
-                .foregroundStyle(AppColors.textSecondary)
+        .task {
+            workoutPlans = await services.workoutService.fetchWorkoutPlans(forClient: client.id)
+            nutritionPlans = await services.nutritionService.fetchNutritionPlans(forClient: client.id)
+            progressEntries = await services.progressService.fetchProgressEntries(for: client.id)
         }
     }
-}
 
-private struct InfoLine: View {
-    let label: String
-    let value: String
+    private var detailTabs: some View {
+        HStack(spacing: 0) {
+            ForEach(DetailTab.allCases) { tab in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { selectedTab = tab }
+                } label: {
+                    VStack(spacing: 8) {
+                        Text(tab.title)
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(selectedTab == tab ? DesignSystem.Colors.indigo : DesignSystem.Colors.txtSecondary)
+                        Rectangle()
+                            .fill(selectedTab == tab ? DesignSystem.Colors.indigo : .clear)
+                            .frame(height: 2)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
 
-    var body: some View {
-        HStack(alignment: .top) {
-            Text(label)
-                .foregroundStyle(AppColors.textSecondary)
-            Spacer()
+    private var scheduleTab: some View {
+        VStack(spacing: 12) {
+            ForEach(workoutPlans.first?.days ?? []) { day in
+                FitCard {
+                    HStack {
+                        FitIconChip(systemName: "dumbbell.fill", color: DesignSystem.Colors.indigo, background: DesignSystem.Colors.indigoBg, size: 34)
+                        VStack(alignment: .leading) {
+                            Text(day.title)
+                                .font(.custom("Archivo-ExtraBold", size: 15))
+                            Text("\(day.exercises.count) esercizi")
+                                .font(DesignSystem.Typography.bodySM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                        Spacer()
+                    }
+                }
+            }
+            AccentButton(title: "Modifica scheda", color: DesignSystem.Colors.indigo) {}
+        }
+    }
+
+    private var dietTab: some View {
+        VStack(spacing: 12) {
+            if let plan = nutritionPlans.first {
+                FitCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("\(plan.dailyCalories) kcal")
+                            .font(.custom("Archivo-Black", size: 26))
+                            .foregroundStyle(DesignSystem.Colors.teal)
+                        Text("P \(plan.proteinGrams)g · C \(plan.carbohydrateGrams)g · G \(plan.fatGrams)g")
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                }
+            }
+            AccentButton(title: "Modifica piano", color: DesignSystem.Colors.indigo) {}
+        }
+    }
+
+    private var feedbackTab: some View {
+        VStack(spacing: 12) {
+            FitCard {
+                Text("I check-in settimanali salvati verranno mostrati qui con le metriche energia, sonno, fame e stress.")
+                    .font(DesignSystem.Typography.bodyMD())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private var progressTab: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                compactProgress("Peso", "\(client.currentWeightKg, specifier: "%.1f")kg", DesignSystem.Colors.limeDark)
+                compactProgress("Inizio", "\(client.initialWeightKg, specifier: "%.1f")kg", DesignSystem.Colors.indigo)
+            }
+            FitCard {
+                Chart(progressEntries.sorted { $0.date < $1.date }) { entry in
+                    BarMark(x: .value("Data", entry.date), y: .value("Peso", entry.weightKg))
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
+                .frame(height: 170)
+            }
+        }
+    }
+
+    private func compactProgress(_ title: String, _ value: String, _ color: Color) -> some View {
+        FitCard {
             Text(value)
-                .multilineTextAlignment(.trailing)
+                .font(.custom("Archivo-Black", size: 22))
+                .foregroundStyle(color)
+            Text(title)
+                .font(DesignSystem.Typography.labelSM())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
         }
-        .font(.subheadline)
+    }
+
+    private enum DetailTab: CaseIterable, Identifiable {
+        case schedule, diet, feedback, progress
+        var id: Self { self }
+        var title: String {
+            switch self {
+            case .schedule: return "Scheda"
+            case .diet: return "Dieta"
+            case .feedback: return "Feedback"
+            case .progress: return "Progressi"
+            }
+        }
     }
 }
 
@@ -433,8 +530,7 @@ struct AppointmentsCalendarView: View {
     @State private var clients: [Client] = []
     @State private var showingAdd = false
     @State private var editingAppointment: Appointment?
-    @State private var calendarMode: CalendarDisplayMode = .week
-    @State private var statusFilter: AppointmentStatusFilter = .all
+    @State private var mode: CalendarMode = .week
     let trainer: Trainer
     let services: AppServices
 
@@ -447,49 +543,62 @@ struct AppointmentsCalendarView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    calendarHeader
-
-                    Picker("Vista calendario", selection: $calendarMode) {
-                        ForEach(CalendarDisplayMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Agenda")
+                                .font(.custom("Archivo-ExtraBold", size: 26))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            Text(viewModel.selectedDate.formatted(.dateTime.month(.wide).year()))
+                                .font(DesignSystem.Typography.labelMD())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
                         }
-                    }
-                    .pickerStyle(.segmented)
-
-                    if calendarMode == .month {
-                        monthCalendar
-                    } else {
-                        weekCalendar
+                        Spacer()
                     }
 
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: AppSpacing.sm) {
-                            ForEach(AppointmentStatusFilter.allCases) { filter in
-                                PillFilterButton(title: filter.title, isSelected: statusFilter == filter, color: filter.color) {
-                                    withAnimation(.easeOut(duration: 0.18)) {
-                                        statusFilter = filter
-                                    }
+                    SegmentedPicker(options: CalendarMode.allCases, selection: $mode, title: \.title, accent: DesignSystem.Colors.indigo)
+                    mode == .week ? AnyView(weekView) : AnyView(monthView)
+
+                    SectionLabel(text: viewModel.selectedDate.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+                    LazyVStack(spacing: 12) {
+                        if viewModel.appointmentsForSelectedDate.isEmpty {
+                            EmptyStateView(title: "Nessun appuntamento", message: "Non ci sono appuntamenti per il giorno selezionato.", icon: "calendar", actionTitle: "Aggiungi appuntamento") {
+                                showingAdd = true
+                            }
+                        } else {
+                            ForEach(viewModel.appointmentsForSelectedDate) { appointment in
+                                Button { editingAppointment = appointment } label: {
+                                    appointmentCard(appointment)
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
                     }
-
-                    dayTimeline
                 }
-                .padding(AppSpacing.lg)
+                .padding(20)
             }
-            .navigationTitle("Agenda")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingAdd = true } label: { Image(systemName: "plus") }
+                    Button { showingAdd = true } label: {
+                        Image(systemName: "plus")
+                            .foregroundStyle(.white)
+                            .frame(width: 38, height: 38)
+                            .background(DesignSystem.Colors.txtPrimary)
+                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .sheet(isPresented: $showingAdd) {
-                AddAppointmentView(trainer: trainer, clients: clients, onSave: viewModel.save)
+                AddAppointmentView(trainer: trainer, clients: clients) { appointment in
+                    viewModel.save(appointment)
+                }
             }
             .sheet(item: $editingAppointment) { appointment in
-                AddAppointmentView(trainer: trainer, clients: clients, appointment: appointment, onSave: viewModel.save)
+                AddAppointmentView(trainer: trainer, clients: clients, appointment: appointment) { appointment in
+                    viewModel.save(appointment)
+                }
             }
             .appScreen()
             .task {
@@ -499,215 +608,107 @@ struct AppointmentsCalendarView: View {
         }
     }
 
-    private var calendarHeader: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Calendario")
-                    .font(AppTypography.hero)
-                    .foregroundStyle(AppColors.textPrimary)
-                Text(monthTitle)
-                    .font(AppTypography.body)
-                    .foregroundStyle(AppColors.textSecondary)
-            }
-            Spacer()
-            HStack(spacing: AppSpacing.sm) {
+    private var weekView: some View {
+        HStack(alignment: .top, spacing: 8) {
+            ForEach(viewModel.weekDates().prefix(7), id: \.self) { date in
                 Button {
-                    changeMonth(by: -1)
+                    withAnimation(.easeOut(duration: 0.18)) { viewModel.selectedDate = date }
                 } label: {
-                    Image(systemName: "chevron.left")
-                        .frame(width: 38, height: 38)
+                    VStack(spacing: 8) {
+                        Text(String(date.formatted(.dateTime.weekday(.abbreviated)).prefix(1)))
+                            .font(DesignSystem.Typography.labelSM())
+                        Text(date.formatted(.dateTime.day()))
+                            .font(.custom("Archivo-ExtraBold", size: 16))
+                        ForEach(0..<min(appointmentCount(on: date), 3), id: \.self) { _ in
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(DesignSystem.Colors.indigo)
+                                .frame(height: 8)
+                        }
+                    }
+                    .foregroundStyle(Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDate) ? .white : DesignSystem.Colors.txtPrimary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 102)
+                    .background(Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDate) ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgCard)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(DesignSystem.Colors.bgLine, lineWidth: 1))
                 }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var monthView: some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+            ForEach(monthDates, id: \.self) { date in
                 Button {
-                    changeMonth(by: 1)
+                    withAnimation(.easeOut(duration: 0.18)) { viewModel.selectedDate = date }
                 } label: {
-                    Image(systemName: "chevron.right")
-                        .frame(width: 38, height: 38)
+                    Text(date.formatted(.dateTime.day()))
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(dayForeground(date))
+                        .frame(width: 36, height: 36)
+                        .background(dayBackground(date))
+                        .clipShape(Circle())
                 }
-            }
-            .font(.subheadline.weight(.bold))
-            .foregroundStyle(AppColors.textPrimary)
-            .background(AppColors.surface)
-            .clipShape(Capsule())
-            .overlay(Capsule().stroke(AppColors.border, lineWidth: 1))
-        }
-    }
-
-    private var weekCalendar: some View {
-        SectionCard(title: "Settimana", icon: "calendar.day.timeline.left") {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: AppSpacing.sm) {
-                    ForEach(weekDates, id: \.self) { date in
-                        CalendarDayButton(
-                            date: date,
-                            isSelected: Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDate),
-                            isToday: Calendar.current.isDateInToday(date),
-                            isInDisplayedMonth: true,
-                            appointmentCount: appointmentCount(on: date)
-                        ) {
-                            select(date)
-                        }
-                    }
-                }
+                .buttonStyle(.plain)
             }
         }
+        .padding(.vertical, 6)
     }
 
-    private var monthCalendar: some View {
-        SectionCard(title: "Mese", icon: "calendar") {
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
-
-            VStack(spacing: AppSpacing.sm) {
-                HStack {
-                    ForEach(shortWeekdays, id: \.self) { day in
-                        Text(day)
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(AppColors.textMuted)
-                            .frame(maxWidth: .infinity)
-                    }
+    private func appointmentCard(_ appointment: Appointment) -> some View {
+        let typeColor = appointment.sessionType == .checkin ? DesignSystem.Colors.amber : DesignSystem.Colors.indigo
+        return FitCard {
+            HStack(spacing: 12) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(typeColor)
+                    .frame(width: 3, height: 54)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("\(appointment.startTime.formattedTime()) – \(appointment.endTime.formattedTime())")
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(typeColor)
+                    Text(clientName(for: appointment.clientID))
+                        .font(.custom("Archivo-ExtraBold", size: 15))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(appointment.sessionType.rawValue)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
                 }
-
-                LazyVGrid(columns: columns, spacing: 6) {
-                    ForEach(monthGridDates, id: \.self) { date in
-                        CalendarMonthDayButton(
-                            date: date,
-                            isSelected: Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDate),
-                            isToday: Calendar.current.isDateInToday(date),
-                            isInDisplayedMonth: Calendar.current.isDate(date, equalTo: viewModel.selectedDate, toGranularity: .month),
-                            appointmentCount: appointmentCount(on: date)
-                        ) {
-                            select(date)
-                        }
-                    }
-                }
+                Spacer()
             }
         }
     }
 
-    private var dayTimeline: some View {
-        SectionCard(title: viewModel.selectedDate.formatted(.dateTime.weekday(.wide).day().month(.wide)), icon: "clock") {
-            if filteredAppointmentsForSelectedDate.isEmpty {
-                EmptyStateView(
-                    title: "Nessuna sessione",
-                    message: "Non ci sono appuntamenti per questo giorno con il filtro attuale.",
-                    icon: "calendar.badge.plus",
-                    actionTitle: "Crea appuntamento"
-                ) {
-                    showingAdd = true
-                }
-            } else {
-                VStack(spacing: AppSpacing.sm) {
-                    ForEach(filteredAppointmentsForSelectedDate) { appointment in
-                        Button {
-                            editingAppointment = appointment
-                        } label: {
-                            AppointmentRowView(appointment: appointment, client: clients.first(where: { $0.id == appointment.clientID }))
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button("Segna completato") {
-                                var updated = appointment
-                                updated.status = .completed
-                                viewModel.save(updated)
-                            }
-                            Button("Annulla sessione") {
-                                var updated = appointment
-                                updated.status = .cancelled
-                                viewModel.save(updated)
-                            }
-                            Button("Elimina", role: .destructive) {
-                                viewModel.delete(appointment)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var filteredAppointmentsForSelectedDate: [Appointment] {
-        viewModel.appointments
-            .filter { Calendar.current.isDate($0.startTime, inSameDayAs: viewModel.selectedDate) }
-            .filter(statusFilter.matches)
-            .sorted { $0.startTime < $1.startTime }
-    }
-
-    private var weekDates: [Date] {
-        guard let interval = Calendar.current.dateInterval(of: .weekOfYear, for: viewModel.selectedDate) else {
-            return viewModel.weekDates()
-        }
-        return (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: interval.start) }
-    }
-
-    private var monthGridDates: [Date] {
+    private var monthDates: [Date] {
         let calendar = Calendar.current
-        let selected = viewModel.selectedDate
-        guard
-            let monthInterval = calendar.dateInterval(of: .month, for: selected),
-            let daysRange = calendar.range(of: .day, in: .month, for: selected)
-        else { return [] }
-
-        let firstOfMonth = monthInterval.start
-        let firstWeekday = calendar.component(.weekday, from: firstOfMonth)
-        let leadingDays = (firstWeekday - calendar.firstWeekday + 7) % 7
-        var dates: [Date] = []
-
-        if leadingDays > 0 {
-            for offset in stride(from: leadingDays, through: 1, by: -1) {
-                if let date = calendar.date(byAdding: .day, value: -offset, to: firstOfMonth) {
-                    dates.append(date)
-                }
-            }
-        }
-
-        for day in daysRange {
-            if let date = calendar.date(byAdding: .day, value: day - 1, to: firstOfMonth) {
-                dates.append(date)
-            }
-        }
-
-        while dates.count % 7 != 0 {
-            if let last = dates.last, let next = calendar.date(byAdding: .day, value: 1, to: last) {
-                dates.append(next)
-            }
-        }
-
-        return dates
-    }
-
-    private var shortWeekdays: [String] {
-        let symbols = Calendar.current.shortStandaloneWeekdaySymbols
-        let first = Calendar.current.firstWeekday - 1
-        let ordered = Array(symbols[first...]) + Array(symbols[..<first])
-        return ordered.map { String($0.prefix(2)).uppercased() }
-    }
-
-    private var monthTitle: String {
-        viewModel.selectedDate.formatted(.dateTime.month(.wide).year())
+        let start = calendar.date(from: calendar.dateComponents([.year, .month], from: viewModel.selectedDate)) ?? viewModel.selectedDate
+        let range = calendar.range(of: .day, in: .month, for: start) ?? 1..<31
+        return range.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: start) }
     }
 
     private func appointmentCount(on date: Date) -> Int {
         viewModel.appointments.filter { Calendar.current.isDate($0.startTime, inSameDayAs: date) }.count
     }
 
-    private func select(_ date: Date) {
-        withAnimation(.easeOut(duration: 0.18)) {
-            viewModel.selectedDate = date
-        }
+    private func dayForeground(_ date: Date) -> Color {
+        if Calendar.current.isDateInToday(date) { return .white }
+        if appointmentCount(on: date) > 0 { return DesignSystem.Colors.indigo }
+        return DesignSystem.Colors.txtPrimary
     }
 
-    private func changeMonth(by value: Int) {
-        withAnimation(.easeOut(duration: 0.2)) {
-            viewModel.selectedDate = Calendar.current.date(byAdding: .month, value: value, to: viewModel.selectedDate) ?? viewModel.selectedDate
-        }
+    private func dayBackground(_ date: Date) -> Color {
+        if Calendar.current.isDateInToday(date) { return DesignSystem.Colors.txtPrimary }
+        if appointmentCount(on: date) > 0 { return DesignSystem.Colors.indigoBg }
+        return .clear
+    }
+
+    private func clientName(for id: UUID) -> String {
+        clients.first(where: { $0.id == id })?.fullName ?? "Cliente"
     }
 }
 
-private enum CalendarDisplayMode: String, CaseIterable, Identifiable {
-    case week
-    case month
-
-    var id: String { rawValue }
-
+private enum CalendarMode: CaseIterable, Hashable {
+    case week, month
     var title: String {
         switch self {
         case .week: return "Settimana"
@@ -716,124 +717,246 @@ private enum CalendarDisplayMode: String, CaseIterable, Identifiable {
     }
 }
 
-private enum AppointmentStatusFilter: String, CaseIterable, Identifiable {
-    case all
-    case scheduled
-    case completed
-    case cancelled
+struct TrainerMessagesView: View {
+    @StateObject private var viewModel: ClientsViewModel
+    let trainer: Trainer
 
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .all: return "Tutti"
-        case .scheduled: return "Programm."
-        case .completed: return "Completati"
-        case .cancelled: return "Annullati"
-        }
+    init(trainer: Trainer, services: AppServices) {
+        self.trainer = trainer
+        _viewModel = StateObject(wrappedValue: ClientsViewModel(trainer: trainer, clientService: services.clientService))
     }
-
-    var color: Color {
-        switch self {
-        case .all: return AppColors.primaryBlack
-        case .scheduled: return AppColors.calendarBlue
-        case .completed: return AppColors.successGreen
-        case .cancelled: return AppColors.dangerRed
-        }
-    }
-
-    func matches(_ appointment: Appointment) -> Bool {
-        switch self {
-        case .all: return true
-        case .scheduled: return appointment.status == .scheduled
-        case .completed: return appointment.status == .completed
-        case .cancelled: return appointment.status == .cancelled
-        }
-    }
-}
-
-private struct CalendarDayButton: View {
-    let date: Date
-    let isSelected: Bool
-    let isToday: Bool
-    let isInDisplayedMonth: Bool
-    let appointmentCount: Int
-    let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
-            VStack(spacing: 7) {
-                Text(date.formatted(.dateTime.weekday(.abbreviated)))
-                    .font(.caption2.weight(.semibold))
-                Text(date.formatted(.dateTime.day()))
-                    .font(.headline)
-                if appointmentCount > 0 {
-                    Text("\(appointmentCount)")
-                        .font(.caption2.weight(.bold))
-                        .foregroundStyle(isSelected ? AppColors.primaryBlack : .white)
-                        .frame(width: 22, height: 22)
-                        .background(isSelected ? .white : AppColors.primaryBlack)
-                        .clipShape(Circle())
-                } else {
-                    Circle()
-                        .fill(isSelected ? .white.opacity(0.55) : AppColors.border)
-                        .frame(width: 6, height: 6)
-                }
-            }
-            .foregroundStyle(isSelected ? .white : (isInDisplayedMonth ? AppColors.textPrimary : AppColors.textMuted))
-            .frame(width: 64, height: 92)
-            .background(isSelected ? AppColors.primaryBlack : AppColors.surface)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous)
-                    .stroke(isToday && !isSelected ? AppColors.primaryBlack : AppColors.border, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-private struct CalendarMonthDayButton: View {
-    let date: Date
-    let isSelected: Bool
-    let isToday: Bool
-    let isInDisplayedMonth: Bool
-    let appointmentCount: Int
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 5) {
-                Text(date.formatted(.dateTime.day()))
-                    .font(.subheadline.weight(.semibold))
-                HStack(spacing: 3) {
-                    ForEach(0..<min(appointmentCount, 3), id: \.self) { _ in
-                        Circle()
-                            .fill(isSelected ? .white : AppColors.calendarBlue)
-                            .frame(width: 4, height: 4)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("Messaggi")
+                            .font(.custom("Archivo-ExtraBold", size: 26))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Spacer()
+                        Text("\(viewModel.clients.count) da leggere")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.amber)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(DesignSystem.Colors.amberBg)
+                            .clipShape(Capsule())
+                    }
+                    SearchBarView(text: $viewModel.searchText, placeholder: "Cerca cliente, email o telefono")
+                    LazyVStack(spacing: 10) {
+                        ForEach(viewModel.filteredClients) { client in
+                            NavigationLink {
+                                TrainerConversationView(client: client)
+                            } label: {
+                                conversationRow(client)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
-                .frame(height: 6)
+                .padding(20)
             }
-            .foregroundStyle(isSelected ? .white : (isInDisplayedMonth ? AppColors.textPrimary : AppColors.textMuted))
-            .frame(height: 48)
-            .frame(maxWidth: .infinity)
-            .background(isSelected ? AppColors.primaryBlack : (isToday ? AppColors.surfaceSecondary : AppColors.surface))
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous)
-                    .stroke(isToday && !isSelected ? AppColors.primaryBlack : AppColors.border, lineWidth: 1)
-            )
+            .toolbar(.hidden, for: .navigationBar)
+            .appScreen()
+            .task { viewModel.load() }
         }
-        .buttonStyle(.plain)
-        .opacity(isInDisplayedMonth ? 1 : 0.45)
+    }
+
+    private func conversationRow(_ client: Client) -> some View {
+        HStack(spacing: 12) {
+            AvatarView(initials: initials(client), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime], size: 44)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(client.fullName)
+                    .font(.custom("Archivo-ExtraBold", size: 15))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text("Tu: aggiorniamo la prossima sessione.")
+                    .font(DesignSystem.Typography.bodySM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 7) {
+                Text("09:42")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                Circle()
+                    .fill(DesignSystem.Colors.indigo)
+                    .frame(width: 8, height: 8)
+            }
+        }
+        .padding(16)
+        .background(DesignSystem.Colors.indigoBg)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+struct TrainerConversationView: View {
+    let client: Client
+    @State private var text = ""
+    @State private var messages: [LocalTrainerMessage] = [
+        LocalTrainerMessage(text: "Come ti senti dopo l'ultima scheda?", isMine: true),
+        LocalTrainerMessage(text: "Meglio, ma ho faticato sugli affondi.", isMine: false)
+    ]
+    @State private var showingFeedback = false
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                AvatarView(initials: initials(client), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime], size: 32)
+                Text(client.fullName)
+                    .font(.custom("Archivo-ExtraBold", size: 15))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Spacer()
+                Button { showingFeedback = true } label: {
+                    Image(systemName: "clipboard")
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
+            }
+            .padding(16)
+
+            ScrollView {
+                VStack(spacing: 12) {
+                    Text("OGGI")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    ForEach(messages) { message in
+                        HStack {
+                            if message.isMine { Spacer(minLength: 40) }
+                            Text(message.text)
+                                .font(DesignSystem.Typography.bodyMD())
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 11)
+                                .background(message.isMine ? DesignSystem.Colors.indigoBg : DesignSystem.Colors.bgCard)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(message.isMine ? DesignSystem.Colors.indigoBg : DesignSystem.Colors.bgLine, lineWidth: 1))
+                            if !message.isMine { Spacer(minLength: 40) }
+                        }
+                    }
+                }
+                .padding(20)
+            }
+
+            HStack(spacing: 10) {
+                TextField("Scrivi a \(client.firstName)…", text: $text)
+                    .font(DesignSystem.Typography.bodyMD())
+                    .padding(.horizontal, 16)
+                    .frame(height: 44)
+                    .background(DesignSystem.Colors.bgCard)
+                    .clipShape(Capsule())
+                    .overlay(Capsule().stroke(DesignSystem.Colors.bgLine, lineWidth: 1))
+                Button(action: send) {
+                    Image(systemName: "arrow.up")
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(DesignSystem.Colors.indigo)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(16)
+        }
+        .navigationTitle("‹ Messaggi")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingFeedback) {
+            FeedbackOverlaySheet(client: client)
+                .presentationDetents([.fraction(0.72)])
+        }
+        .appScreen()
+    }
+
+    private func send() {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        messages.append(LocalTrainerMessage(text: trimmed, isMine: true))
+        text = ""
+    }
+}
+
+private struct FeedbackOverlaySheet: View {
+    let client: Client
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Capsule().fill(DesignSystem.Colors.bgLine).frame(width: 46, height: 5).frame(maxWidth: .infinity)
+            Text("Feedback di \(client.firstName)")
+                .font(DesignSystem.Typography.titleLG())
+                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+            Text("Check-in settimanali")
+                .font(DesignSystem.Typography.labelMD())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            FitCard {
+                Text("Energia stabile · Sonno medio · Stress da monitorare")
+                    .font(DesignSystem.Typography.bodyMD())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+            Spacer()
+        }
+        .padding(24)
+        .appScreen()
+    }
+}
+
+private struct LocalTrainerMessage: Identifiable {
+    let id = UUID()
+    let text: String
+    let isMine: Bool
+}
+
+struct TrainerMenuView: View {
+    @EnvironmentObject private var authViewModel: AuthViewModel
+    let trainer: Trainer
+    let services: AppServices
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Menu")
+                        .font(.custom("Archivo-ExtraBold", size: 26))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+
+                    SectionLabel(text: "Contenuti")
+                    NavigationLink { WorkoutPlansListView(trainer: trainer, services: services) } label: { menuRow("Schede", "list.clipboard.fill") }
+                    NavigationLink { NutritionPlansListView(trainer: trainer, services: services) } label: { menuRow("Diete", "fork.knife") }
+                    NavigationLink { MachinesListView(trainer: trainer, services: services) } label: { menuRow("Catalogo macchinari", "dumbbell.fill") }
+
+                    SectionLabel(text: "Studio")
+                    NavigationLink { SubscriptionView(trainer: trainer, services: services) } label: { menuRow("Abbonamenti", "creditcard.fill") }
+                    NavigationLink { TrainerSettingsView(trainer: trainer) } label: { menuRow("Impostazioni", "gearshape.fill") }
+                    Button {
+                        authViewModel.logout()
+                    } label: {
+                        menuRow("Esci", "rectangle.portrait.and.arrow.right", muted: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(20)
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .appScreen()
+        }
+    }
+
+    private func menuRow(_ title: String, _ icon: String, muted: Bool = false) -> some View {
+        FitCard {
+            HStack(spacing: 12) {
+                FitIconChip(systemName: icon, color: muted ? DesignSystem.Colors.txtSecondary : DesignSystem.Colors.indigo, background: muted ? DesignSystem.Colors.bgLine.opacity(0.7) : DesignSystem.Colors.indigoBg, size: 36)
+                Text(title)
+                    .font(.custom("Archivo-ExtraBold", size: 15))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
     }
 }
 
 struct MachinesListView: View {
     @StateObject private var viewModel: MachinesViewModel
     @State private var showingAdd = false
-    @State private var editingMachine: Machine?
     let services: AppServices
 
     init(trainer: Trainer, services: AppServices) {
@@ -842,49 +965,42 @@ struct MachinesListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.md) {
-                    Menu {
-                        Button("Tutti") { viewModel.selectedGroup = nil }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("Catalogo macchinari")
+                        .font(DesignSystem.Typography.titleLG())
+                    Spacer()
+                    Button("+") { showingAdd = true }
+                        .font(.custom("Archivo-Black", size: 20))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(DesignSystem.Colors.txtPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack {
+                        PillFilterButton(title: "Tutti", isSelected: viewModel.selectedGroup == nil, color: DesignSystem.Colors.indigo) { viewModel.selectedGroup = nil }
                         ForEach(MuscleGroup.allCases) { group in
-                            Button(group.rawValue) { viewModel.selectedGroup = group }
+                            PillFilterButton(title: group.rawValue, isSelected: viewModel.selectedGroup == group, color: DesignSystem.Colors.indigo) { viewModel.selectedGroup = group }
                         }
-                    } label: {
-                        Label(viewModel.selectedGroup?.rawValue ?? "Filtra gruppo", systemImage: "line.3.horizontal.decrease.circle")
-                            .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(SecondaryButtonStyle())
-
+                }
+                LazyVStack(spacing: 12) {
                     ForEach(viewModel.filteredMachines) { machine in
-                        Button {
-                            editingMachine = machine
-                        } label: {
-                            MachineCard(machine: machine)
-                        }
-                        .buttonStyle(.plain)
-                        .contextMenu {
-                            Button("Elimina", role: .destructive) { viewModel.delete(machine) }
-                        }
+                        MachineCard(machine: machine)
                     }
                 }
-                .padding(AppSpacing.lg)
             }
-            .navigationTitle("Macchinari")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingAdd = true } label: { Image(systemName: "plus") }
-                }
-            }
-            .sheet(isPresented: $showingAdd) {
-                AddMachineView(machine: viewModel.makeEmptyMachine(), catalogService: services.catalogService, onSave: viewModel.save)
-            }
-            .sheet(item: $editingMachine) { machine in
-                AddMachineView(machine: machine, catalogService: services.catalogService, onSave: viewModel.save)
-            }
-            .appScreen()
-            .task { viewModel.load() }
+            .padding(20)
         }
+        .navigationTitle("‹ Menu")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingAdd) {
+            AddMachineView(machine: viewModel.makeEmptyMachine(), catalogService: services.catalogService, onSave: viewModel.save)
+        }
+        .appScreen()
+        .task { viewModel.load() }
     }
 }
 
@@ -902,39 +1018,49 @@ struct WorkoutPlansListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: AppSpacing.md) {
-                    if viewModel.plans.isEmpty {
-                        EmptyStateView(title: "Nessuna scheda", message: "Crea una scheda personalizzata per un cliente.", icon: "list.clipboard")
-                    } else {
-                        ForEach(viewModel.plans) { plan in
-                            NavigationLink {
-                                WorkoutPlanDetailView(plan: plan, client: clients.first(where: { $0.id == plan.clientID }))
-                            } label: {
-                                PlanCard(title: plan.name, subtitle: clients.first(where: { $0.id == plan.clientID })?.fullName ?? "Cliente", status: plan.status.rawValue, icon: "figure.run")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .padding(AppSpacing.lg)
-            }
-            .navigationTitle("Schede")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingCreate = true } label: { Image(systemName: "plus") }
-                }
-            }
+        plansList(title: "Schede", icon: "dumbbell.fill", plans: viewModel.plans.map { plan in
+            (plan.id, plan.name, clients.first(where: { $0.id == plan.clientID })?.fullName ?? "Cliente", plan.status.rawValue)
+        })
             .sheet(isPresented: $showingCreate) {
                 CreateWorkoutPlanView(clients: clients, catalogService: services.catalogService, onCreate: viewModel.createTemplatePlan)
             }
-            .appScreen()
             .task {
                 viewModel.load()
                 clients = await services.clientService.fetchClients(for: trainer.id)
             }
+    }
+
+    private func plansList(title: String, icon: String, plans: [(UUID, String, String, String)]) -> some View {
+        ScrollView {
+            VStack(spacing: 12) {
+                HStack {
+                    Text(title).font(DesignSystem.Typography.titleLG())
+                    Spacer()
+                    Button("+") { showingCreate = true }
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(DesignSystem.Colors.txtPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                ForEach(plans, id: \.0) { plan in
+                    FitCard {
+                        HStack {
+                            FitIconChip(systemName: icon, color: DesignSystem.Colors.indigo, background: DesignSystem.Colors.indigoBg, size: 36)
+                            VStack(alignment: .leading) {
+                                Text(plan.1).font(.custom("Archivo-ExtraBold", size: 15))
+                                Text(plan.2).font(DesignSystem.Typography.labelMD()).foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                            Spacer()
+                            StatusBadge(text: plan.3, style: .active)
+                        }
+                    }
+                }
+            }
+            .padding(20)
         }
+        .navigationTitle("‹ Menu")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
     }
 }
 
@@ -952,149 +1078,43 @@ struct NutritionPlansListView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: AppSpacing.md) {
-                    if viewModel.plans.isEmpty {
-                        EmptyStateView(title: "Nessun piano", message: "Crea un piano alimentare per un cliente.", icon: "fork.knife")
-                    } else {
-                        ForEach(viewModel.plans) { plan in
-                            NavigationLink {
-                                NutritionPlanDetailView(plan: plan)
-                            } label: {
-                                PlanCard(title: "\(plan.dailyCalories) kcal", subtitle: clients.first(where: { $0.id == plan.clientID })?.fullName ?? "Cliente", status: String(format: "Target %.1f kg", plan.targetWeightKg), icon: "leaf")
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-                .padding(AppSpacing.lg)
-            }
-            .navigationTitle("Nutrizione")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showingCreate = true } label: { Image(systemName: "plus") }
-                }
-            }
-            .sheet(isPresented: $showingCreate) {
-                CreateNutritionPlanView(clients: clients, catalogService: services.catalogService, onCreate: viewModel.createTemplatePlan)
-            }
-            .appScreen()
-            .task {
-                viewModel.load()
-                clients = await services.clientService.fetchClients(for: trainer.id)
-            }
-        }
-    }
-}
-
-private struct PlanCard: View {
-    let title: String
-    let subtitle: String
-    let status: String
-    let icon: String
-
-    var body: some View {
-        HStack(spacing: AppSpacing.md) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundStyle(AppColors.primaryBlack)
-                .frame(width: 44, height: 44)
-                .background(AppColors.surfaceSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: AppRadius.sm, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(AppColors.textPrimary)
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(AppColors.textSecondary)
-            }
-
-            Spacer()
-
-            Text(status)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(AppColors.successGreen)
-        }
-        .appCard()
-    }
-}
-
-struct WorkoutPlanDetailView: View {
-    let plan: WorkoutPlan
-    let client: Client?
-
-    var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                SectionCard(title: plan.name, icon: "list.clipboard") {
-                    InfoLine(label: "Cliente", value: client?.fullName ?? "Cliente")
-                    InfoLine(label: "Obiettivo", value: plan.goal)
-                    InfoLine(label: "Stato", value: plan.status.rawValue)
+            VStack(spacing: 12) {
+                HStack {
+                    Text("Diete").font(DesignSystem.Typography.titleLG())
+                    Spacer()
+                    Button("+") { showingCreate = true }
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(DesignSystem.Colors.txtPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 }
-
-                ForEach(plan.days) { day in
-                    SectionCard(title: "Giorno \(day.dayIndex): \(day.title)", icon: "figure.run") {
-                        ForEach(day.exercises.sorted { $0.order < $1.order }) { exercise in
-                            WorkoutExerciseRow(exercise: exercise)
-                            Divider().background(AppColors.divider)
-                        }
-                    }
-                }
-            }
-            .padding(AppSpacing.lg)
-        }
-        .navigationTitle("Scheda")
-        .appScreen()
-    }
-}
-
-struct NutritionPlanDetailView: View {
-    let plan: NutritionPlan
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                SectionCard(title: "Piano alimentare", icon: "fork.knife") {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: AppSpacing.sm) {
-                        MacroNutrientCard(title: "Calorie", value: "\(plan.dailyCalories)", color: AppColors.nutritionYellow)
-                        MacroNutrientCard(title: "Proteine", value: "\(plan.proteinGrams) g", color: AppColors.successGreen)
-                        MacroNutrientCard(title: "Carboidrati", value: "\(plan.carbohydrateGrams) g", color: AppColors.infoBlue)
-                        MacroNutrientCard(title: "Grassi", value: "\(plan.fatGrams) g", color: AppColors.energyOrange)
-                    }
-                    Text(plan.notes)
-                        .font(.caption)
-                        .foregroundStyle(AppColors.textSecondary)
-                }
-
-                ForEach(plan.meals) { meal in
-                    SectionCard(title: meal.name, icon: "clock") {
-                        Text(meal.time.formattedTime())
-                            .font(.caption)
-                            .foregroundStyle(AppColors.textSecondary)
-                        ForEach(meal.foods) { food in
-                            HStack {
-                                Text(food.name)
-                                Spacer()
-                                Text(food.quantity)
-                                    .foregroundStyle(AppColors.textSecondary)
+                ForEach(viewModel.plans) { plan in
+                    FitCard {
+                        HStack {
+                            FitIconChip(systemName: "fork.knife", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 36)
+                            VStack(alignment: .leading) {
+                                Text("\(plan.dailyCalories) kcal").font(.custom("Archivo-ExtraBold", size: 15))
+                                Text(clients.first(where: { $0.id == plan.clientID })?.fullName ?? "Cliente").font(DesignSystem.Typography.labelMD()).foregroundStyle(DesignSystem.Colors.txtSecondary)
                             }
-                            .font(.subheadline)
-                        }
-                        if !meal.notes.isEmpty {
-                            Text(meal.notes)
-                                .font(.caption)
-                                .foregroundStyle(AppColors.textSecondary)
+                            Spacer()
+                            StatusBadge(text: "attiva", style: .active)
                         }
                     }
                 }
             }
-            .padding(AppSpacing.lg)
+            .padding(20)
         }
-        .navigationTitle("Nutrizione")
+        .navigationTitle("‹ Menu")
+        .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showingCreate) {
+            CreateNutritionPlanView(clients: clients, catalogService: services.catalogService, onCreate: viewModel.createTemplatePlan)
+        }
         .appScreen()
+        .task {
+            viewModel.load()
+            clients = await services.clientService.fetchClients(for: trainer.id)
+        }
     }
 }
 
@@ -1105,56 +1125,129 @@ struct SubscriptionView: View {
     let services: AppServices
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    SectionCard(title: "Piano attuale", icon: "creditcard") {
-                        InfoLine(label: "Trainer", value: trainer.fullName)
-                        InfoLine(label: "Studio", value: trainer.studioName)
-                        InfoLine(label: "Piano locale", value: trainer.subscriptionTier.rawValue)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Abbonamenti")
+                    .font(DesignSystem.Typography.titleLG())
+                FitCard(border: DesignSystem.Colors.indigo, lineWidth: 2) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("PIANO ATTUALE")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.indigo)
+                            .padding(.horizontal, 9)
+                            .padding(.vertical, 5)
+                            .background(DesignSystem.Colors.indigoBg)
+                            .clipShape(Capsule())
+                        Text(trainer.subscriptionTier.rawValue)
+                            .font(.custom("Archivo-Black", size: 28))
+                        Text("Gestione clienti, schede, dieta, agenda e progressi.")
+                            .font(DesignSystem.Typography.bodyMD())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
                     }
-
-                    SectionCard(title: "Pacchetti SaaS", icon: "square.stack.3d.up") {
-                        if plans.isEmpty {
-                            Text(errorMessage ?? "Configura Supabase per leggere i piani reali.")
-                                .font(AppTypography.body)
-                                .foregroundStyle(AppColors.textSecondary)
-                        } else {
-                            ForEach(plans) { plan in
-                                HStack {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(plan.name)
-                                            .font(.headline)
-                                        Text(plan.description)
-                                            .font(.caption)
-                                            .foregroundStyle(AppColors.textSecondary)
-                                    }
-                                    Spacer()
-                                    VStack(alignment: .trailing, spacing: 4) {
-                                        Text(String(format: "%.2f EUR", plan.monthlyPrice))
-                                            .font(.subheadline.weight(.semibold))
-                                        Text(plan.maxClients.map { "\($0) clienti" } ?? "Illimitato")
-                                            .font(.caption)
-                                            .foregroundStyle(AppColors.textSecondary)
-                                    }
-                                }
-                                Divider().background(AppColors.divider)
-                            }
+                }
+                ForEach(plans) { plan in
+                    FitCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(plan.name).font(DesignSystem.Typography.titleMD())
+                            Text(String(format: "%.2f EUR/mese", plan.monthlyPrice))
+                                .font(.custom("Archivo-ExtraBold", size: 24))
+                            Text(plan.description)
+                                .font(DesignSystem.Typography.bodyMD())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            AccentButton(title: "Passa a questo piano", color: DesignSystem.Colors.indigo) {}
                         }
                     }
                 }
-                .padding(AppSpacing.lg)
-            }
-            .navigationTitle("Abbonamento")
-            .appScreen()
-            .task {
-                do {
-                    plans = try await services.subscriptionService.fetchPlans()
-                    errorMessage = nil
-                } catch {
-                    errorMessage = error.localizedDescription
+                if let errorMessage {
+                    Text(errorMessage).font(DesignSystem.Typography.bodySM()).foregroundStyle(AppColors.dangerRed)
                 }
+            }
+            .padding(20)
+        }
+        .navigationTitle("‹ Menu")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+        .task {
+            do {
+                plans = try await services.subscriptionService.fetchPlans()
+                errorMessage = nil
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
     }
+}
+
+struct TrainerSettingsView: View {
+    let trainer: Trainer
+    @State private var notifications = true
+    @State private var theme = "Sistema"
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Text("Impostazioni")
+                    .font(DesignSystem.Typography.titleLG())
+                SectionLabel(text: "Profilo trainer")
+                VStack(spacing: 8) {
+                    AvatarView(initials: initials(trainer), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.teal], size: 70)
+                    Button("Modifica foto") {}
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
+                .frame(maxWidth: .infinity)
+                settingsRow("Nome", trainer.firstName)
+                settingsRow("Cognome", trainer.lastName)
+                settingsRow("Studio/Palestra", trainer.studioName)
+                settingsRow("Specializzazione", "Personal trainer")
+                SectionLabel(text: "Preferenze")
+                FitCard {
+                    Toggle("Notifiche", isOn: $notifications)
+                        .tint(DesignSystem.Colors.indigo)
+                        .font(DesignSystem.Typography.labelMD())
+                }
+                settingsRow("Lingua", "Italiano")
+                settingsRow("Tema", theme)
+                SectionLabel(text: "Account")
+                settingsRow("Cambia password", "")
+                settingsRow("Privacy e dati", "")
+                settingsRow("Termini di servizio", "")
+            }
+            .padding(20)
+        }
+        .navigationTitle("‹ Menu")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    private func settingsRow(_ title: String, _ value: String) -> some View {
+        FitCard {
+            HStack {
+                Text(title)
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Spacer()
+                if !value.isEmpty {
+                    Text(value)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+}
+
+private func initials(_ client: Client) -> String {
+    "\(client.firstName.first.map(String.init) ?? "")\(client.lastName.first.map(String.init) ?? "")"
+}
+
+private func initials(_ trainer: Trainer) -> String {
+    "\(trainer.firstName.first.map(String.init) ?? "")\(trainer.lastName.first.map(String.init) ?? "")"
+}
+
+private func weeksSinceJoin(_ client: Client) -> Int {
+    max(Calendar.current.dateComponents([.weekOfYear], from: client.joinedAt, to: Date()).weekOfYear ?? 0, 1)
 }

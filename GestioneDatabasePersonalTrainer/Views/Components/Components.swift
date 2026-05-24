@@ -1,5 +1,203 @@
 import SwiftUI
 
+struct FitCard<Content: View>: View {
+    var background: Color = DesignSystem.Colors.bgCard
+    var border: Color = DesignSystem.Colors.bgLine
+    var lineWidth: CGFloat = 1
+    var cornerRadius: CGFloat = 18
+    var padding: CGFloat = DesignSystem.Spacing.md
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .padding(padding)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(background)
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(border, lineWidth: lineWidth)
+            )
+            .shadow(color: Color(red: 40 / 255, green: 44 / 255, blue: 54 / 255).opacity(0.04), radius: 10, x: 0, y: 2)
+    }
+}
+
+struct SectionLabel: View {
+    let text: String
+
+    var body: some View {
+        Text("// \(text.uppercased())")
+            .font(DesignSystem.Typography.sectionLabel())
+            .tracking(1.8)
+            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+    }
+}
+
+struct AccentButton: View {
+    let title: String
+    let color: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.custom("Archivo-ExtraBold", size: 15))
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(color)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct StatusPill: View {
+    enum Status: Equatable {
+        case active
+        case checkin
+        case inactive(days: Int)
+    }
+
+    let status: Status
+
+    var body: some View {
+        Text(title)
+            .font(DesignSystem.Typography.labelSM())
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(background)
+            .clipShape(Capsule())
+    }
+
+    private var title: String {
+        switch status {
+        case .active: return "Attivo"
+        case .checkin: return "Check-in"
+        case .inactive(let days): return "\(days)gg"
+        }
+    }
+
+    private var foreground: Color {
+        switch status {
+        case .active: return DesignSystem.Colors.teal
+        case .checkin: return DesignSystem.Colors.amber
+        case .inactive: return DesignSystem.Colors.txtSecondary
+        }
+    }
+
+    private var background: Color {
+        switch status {
+        case .active: return DesignSystem.Colors.tealBg
+        case .checkin: return DesignSystem.Colors.amberBg
+        case .inactive: return DesignSystem.Colors.bgLine.opacity(0.75)
+        }
+    }
+}
+
+struct TrendBadge: View {
+    let value: String
+
+    var body: some View {
+        Text(value)
+            .font(DesignSystem.Typography.labelSM())
+            .foregroundStyle(DesignSystem.Colors.trend)
+    }
+}
+
+struct AvatarView: View {
+    let initials: String
+    let gradient: [Color]
+    let size: CGFloat
+
+    var body: some View {
+        Text(initials.uppercased())
+            .font(.custom("Archivo-Black", size: max(size * 0.32, 12)))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(
+                LinearGradient(colors: gradient, startPoint: .topLeading, endPoint: .bottomTrailing)
+            )
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.32, style: .continuous))
+    }
+}
+
+struct FitIconChip: View {
+    let systemName: String
+    let color: Color
+    var background: Color?
+    var size: CGFloat = 34
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.42, weight: .semibold))
+            .foregroundStyle(color)
+            .frame(width: size, height: size)
+            .background(background ?? color.opacity(0.12))
+            .clipShape(RoundedRectangle(cornerRadius: size * 0.3, style: .continuous))
+    }
+}
+
+struct FitProgressRing: View {
+    let progress: Double
+    let color: Color
+    var lineWidth: CGFloat = 12
+    var content: AnyView?
+
+    init(progress: Double, color: Color, lineWidth: CGFloat = 12, content: AnyView? = nil) {
+        self.progress = progress
+        self.color = color
+        self.lineWidth = lineWidth
+        self.content = content
+    }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(DesignSystem.Colors.bgLine, lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: min(max(progress, 0), 1))
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            if let content {
+                content
+            }
+        }
+    }
+}
+
+struct SegmentedPicker<Option: Hashable>: View {
+    let options: [Option]
+    @Binding var selection: Option
+    let title: (Option) -> String
+    var accent: Color = DesignSystem.Colors.limeDark
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(options, id: \.self) { option in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        selection = option
+                    }
+                } label: {
+                    Text(title(option))
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(selection == option ? accent : DesignSystem.Colors.txtSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 38)
+                        .background(selection == option ? DesignSystem.Colors.bgCard : Color.clear)
+                        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(4)
+        .background(DesignSystem.Colors.bgLine.opacity(0.72))
+        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+}
+
 enum StatusBadgeStyle {
     case active
     case pending
