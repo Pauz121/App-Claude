@@ -106,12 +106,14 @@ final class AuthViewModel: ObservableObject {
     }
 
     func loginTrainerDemo() {
+        AppConfiguration.isDemoMode = true
         isLoading = false
         errorMessage = nil
         session = .trainer(authService.demoTrainer())
     }
 
     func loginClientDemo() {
+        AppConfiguration.isDemoMode = true
         isLoading = false
         do {
             session = .client(try authService.demoClient())
@@ -122,6 +124,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func logout() {
+        AppConfiguration.isDemoMode = false
         Task<Void, Never>(priority: nil) {
             await authService.logout()
             session = nil

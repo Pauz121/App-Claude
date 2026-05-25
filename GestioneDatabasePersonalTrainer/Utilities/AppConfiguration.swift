@@ -7,9 +7,13 @@ enum AppConfiguration {
 
     static let isDemoLoginEnabled = true
 
+    // Set to true during demo sessions — forces all services to use MockDatabase instead of Supabase
+    static var isDemoMode: Bool = false
+
     static var isSupabaseConfigured: Bool {
-        supabaseURL.contains(".supabase.co") &&
-        !supabaseURL.contains("YOUR_PROJECT_REF") &&
-        !supabaseAnonKey.contains("YOUR_SUPABASE_ANON_KEY")
+        guard !isDemoMode else { return false }
+        return supabaseURL.contains(".supabase.co") &&
+               !supabaseURL.contains("YOUR_PROJECT_REF") &&
+               !supabaseAnonKey.contains("YOUR_SUPABASE_ANON_KEY")
     }
 }
