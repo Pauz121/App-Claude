@@ -81,15 +81,13 @@ struct TrainerDashboardView: View {
                 }
             }
             .sheet(isPresented: $showingCreateWorkout) {
-                CreateWorkoutPlanView(clients: clients, catalogService: services.catalogService) { client, name, goal in
-                    WorkoutPlansViewModel(trainer: trainer, service: services.workoutService).createTemplatePlan(client: client, name: name, goal: goal)
-                    reload()
+                CreateWorkoutPlanView(clients: clients, catalogService: services.catalogService, services: services) { plan in
+                    Task { _ = await services.workoutService.createWorkoutPlan(plan); reload() }
                 }
             }
             .sheet(isPresented: $showingCreateNutrition) {
-                CreateNutritionPlanView(clients: clients, catalogService: services.catalogService) { client, calories, targetWeight in
-                    NutritionPlansViewModel(trainer: trainer, service: services.nutritionService).createTemplatePlan(client: client, calories: calories, targetWeight: targetWeight)
-                    reload()
+                CreateNutritionPlanView(clients: clients, catalogService: services.catalogService, services: services) { plan in
+                    Task { _ = await services.nutritionService.createNutritionPlan(plan); reload() }
                 }
             }
             .appScreen()
@@ -264,7 +262,7 @@ struct TrainerAlertListView: View {
             }
             .padding(20)
         }
-        .navigationTitle("‹ Dashboard")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .appScreen()
     }
@@ -394,7 +392,7 @@ struct ClientDetailView: View {
             }
             .padding(20)
         }
-        .navigationTitle("‹ Clienti")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -856,7 +854,7 @@ struct TrainerConversationView: View {
             }
             .padding(16)
         }
-        .navigationTitle("‹ Messaggi")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingFeedback) {
             FeedbackOverlaySheet(client: client)
@@ -919,6 +917,7 @@ struct TrainerMenuView: View {
                     SectionLabel(text: "Contenuti")
                     NavigationLink { WorkoutPlansListView(trainer: trainer, services: services) } label: { menuRow("Schede", "list.clipboard.fill") }
                     NavigationLink { NutritionPlansListView(trainer: trainer, services: services) } label: { menuRow("Diete", "fork.knife") }
+                    NavigationLink { SavedMealsListView(trainer: trainer, services: services) } label: { menuRow("Pasti salvati", "bookmark.fill") }
                     NavigationLink { MachinesListView(trainer: trainer, services: services) } label: { menuRow("Catalogo macchinari", "dumbbell.fill") }
 
                     SectionLabel(text: "Studio")
@@ -994,7 +993,7 @@ struct MachinesListView: View {
             }
             .padding(20)
         }
-        .navigationTitle("‹ Menu")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingAdd) {
             AddMachineView(machine: viewModel.makeEmptyMachine(), catalogService: services.catalogService, onSave: viewModel.save)
@@ -1022,7 +1021,9 @@ struct WorkoutPlansListView: View {
             (plan.id, plan.name, clients.first(where: { $0.id == plan.clientID })?.fullName ?? "Cliente", plan.status.rawValue)
         })
             .sheet(isPresented: $showingCreate) {
-                CreateWorkoutPlanView(clients: clients, catalogService: services.catalogService, onCreate: viewModel.createTemplatePlan)
+                CreateWorkoutPlanView(clients: clients, catalogService: services.catalogService, services: services) { plan in
+                    viewModel.createPlan(plan)
+                }
             }
             .task {
                 viewModel.load()
@@ -1058,7 +1059,7 @@ struct WorkoutPlansListView: View {
             }
             .padding(20)
         }
-        .navigationTitle("‹ Menu")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .appScreen()
     }
@@ -1105,10 +1106,12 @@ struct NutritionPlansListView: View {
             }
             .padding(20)
         }
-        .navigationTitle("‹ Menu")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showingCreate) {
-            CreateNutritionPlanView(clients: clients, catalogService: services.catalogService, onCreate: viewModel.createTemplatePlan)
+            CreateNutritionPlanView(clients: clients, catalogService: services.catalogService, services: services) { plan in
+                viewModel.createPlan(plan)
+            }
         }
         .appScreen()
         .task {
@@ -1124,47 +1127,34 @@ struct SubscriptionView: View {
     let trainer: Trainer
     let services: AppServices
 
+    private var mockExpiryDate: Date { .daysFromNow(28) }
+
+    private var currentPlanFeatures: [String] {
+        switch trainer.subscriptionTier {
+        case .free: return ["Fino a 3 clienti", "Schede base", "Agenda settimanale"]
+        case .pro: return ["Clienti illimitati", "Schede avanzate", "Piani alimentari", "Agenda completa", "Progressi e foto", "Check-in clienti", "Analytics"]
+        case .studio: return ["Tutto di Pro", "Multi-trainer", "Branding studio", "Supporto prioritario", "Reportistica avanzata", "API access"]
+        }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("Abbonamenti")
-                    .font(DesignSystem.Typography.titleLG())
-                FitCard(border: DesignSystem.Colors.indigo, lineWidth: 2) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("PIANO ATTUALE")
-                            .font(DesignSystem.Typography.labelSM())
-                            .foregroundStyle(DesignSystem.Colors.indigo)
-                            .padding(.horizontal, 9)
-                            .padding(.vertical, 5)
-                            .background(DesignSystem.Colors.indigoBg)
-                            .clipShape(Capsule())
-                        Text(trainer.subscriptionTier.rawValue)
-                            .font(.custom("Archivo-Black", size: 28))
-                        Text("Gestione clienti, schede, dieta, agenda e progressi.")
-                            .font(DesignSystem.Typography.bodyMD())
-                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
-                    }
-                }
-                ForEach(plans) { plan in
-                    FitCard {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text(plan.name).font(DesignSystem.Typography.titleMD())
-                            Text(String(format: "%.2f EUR/mese", plan.monthlyPrice))
-                                .font(.custom("Archivo-ExtraBold", size: 24))
-                            Text(plan.description)
-                                .font(DesignSystem.Typography.bodyMD())
-                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
-                            AccentButton(title: "Passa a questo piano", color: DesignSystem.Colors.indigo) {}
-                        }
-                    }
-                }
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Abbonamento")
+                    .font(.custom("Archivo-ExtraBold", size: 26))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+
+                currentPlanCard
+                featuresCard
+                SectionLabel(text: "Altri piani")
+                otherPlansSection
                 if let errorMessage {
                     Text(errorMessage).font(DesignSystem.Typography.bodySM()).foregroundStyle(AppColors.dangerRed)
                 }
             }
             .padding(20)
         }
-        .navigationTitle("‹ Menu")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .appScreen()
         .task {
@@ -1173,6 +1163,129 @@ struct SubscriptionView: View {
                 errorMessage = nil
             } catch {
                 errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private var currentPlanCard: some View {
+        FitCard(border: DesignSystem.Colors.indigo, lineWidth: 2) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("PIANO ATTUALE")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(DesignSystem.Colors.indigoBg)
+                        .clipShape(Capsule())
+                    Spacer()
+                    Text("ATTIVO")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.limeDark)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(DesignSystem.Colors.limeBg)
+                        .clipShape(Capsule())
+                }
+                Text(trainer.subscriptionTier.rawValue.uppercased())
+                    .font(.custom("Archivo-Black", size: 32))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                HStack(spacing: 8) {
+                    Image(systemName: "calendar")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Text("Scade il \(mockExpiryDate.formatted(.dateTime.day().month(.wide).year()))")
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+        }
+    }
+
+    private var featuresCard: some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Incluso nel piano")
+                    .font(.custom("Archivo-ExtraBold", size: 15))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                ForEach(currentPlanFeatures, id: \.self) { feature in
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(DesignSystem.Colors.limeDark)
+                            .font(.system(size: 16))
+                        Text(feature)
+                            .font(DesignSystem.Typography.bodyMD())
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Spacer()
+                    }
+                }
+            }
+        }
+    }
+
+    private var otherPlansSection: some View {
+        VStack(spacing: 12) {
+            if plans.isEmpty {
+                staticPlanCards
+            } else {
+                ForEach(plans) { plan in
+                    planCard(name: plan.name, price: plan.monthlyPrice, description: plan.description, maxClients: plan.maxClients)
+                }
+            }
+            FitCard {
+                HStack(spacing: 10) {
+                    Image(systemName: "creditcard.fill")
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Text("Il pagamento avverrà tramite il sistema di fatturazione. Placeholder per Stripe / RevenueCat / StoreKit.")
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        .italic()
+                }
+            }
+        }
+    }
+
+    private var staticPlanCards: some View {
+        Group {
+            if trainer.subscriptionTier != .free {
+                planCard(name: "Free", price: 0, description: "Per iniziare. Fino a 3 clienti, funzionalità base.", maxClients: 3)
+            }
+            if trainer.subscriptionTier != .pro {
+                planCard(name: "Pro", price: 29, description: "Clienti illimitati, piani alimentari, analytics.", maxClients: nil)
+            }
+            if trainer.subscriptionTier != .studio {
+                planCard(name: "Studio", price: 79, description: "Multi-trainer, branding, reportistica avanzata.", maxClients: nil)
+            }
+        }
+    }
+
+    private func planCard(name: String, price: Double, description: String, maxClients: Int?) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(name.uppercased())
+                        .font(.custom("Archivo-Black", size: 18))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Spacer()
+                    if let maxClients {
+                        Text("Max \(maxClients) clienti")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(DesignSystem.Colors.bgLine)
+                            .clipShape(Capsule())
+                    }
+                }
+                Text(price == 0 ? "Gratuito" : String(format: "%.0f EUR / mese", price))
+                    .font(.custom("Archivo-ExtraBold", size: 22))
+                    .foregroundStyle(DesignSystem.Colors.indigo)
+                Text(description)
+                    .font(DesignSystem.Typography.bodyMD())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                AccentButton(title: "Passa a \(name)", color: DesignSystem.Colors.indigo) {
+                    // Placeholder — collegare Stripe / RevenueCat / StoreKit
+                }
             }
         }
     }
@@ -1215,7 +1328,7 @@ struct TrainerSettingsView: View {
             }
             .padding(20)
         }
-        .navigationTitle("‹ Menu")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .appScreen()
     }
@@ -1235,6 +1348,189 @@ struct TrainerSettingsView: View {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+}
+
+struct SavedMealsListView: View {
+    @State private var meals: [SavedMeal] = []
+    @State private var searchText = ""
+    @State private var showingAdd = false
+    @State private var editingMeal: SavedMeal?
+    let trainer: Trainer
+    let services: AppServices
+
+    var filtered: [SavedMeal] {
+        searchText.isEmpty ? meals : meals.filter {
+            $0.name.localizedCaseInsensitiveContains(searchText) ||
+            $0.description.localizedCaseInsensitiveContains(searchText)
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                SearchBarView(text: $searchText, placeholder: "Cerca pasto salvato")
+                SectionLabel(text: "\(filtered.count) pasti")
+                LazyVStack(spacing: 12) {
+                    ForEach(filtered) { meal in
+                        savedMealRow(meal)
+                    }
+                    if filtered.isEmpty {
+                        EmptyStateView(title: "Nessun pasto salvato", message: "Aggiungi pasti ricorrenti per riutilizzarli nelle diete.", icon: "bookmark")
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                Text("Pasti salvati")
+                    .font(.custom("Archivo-ExtraBold", size: 20))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingAdd = true } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(DesignSystem.Colors.txtPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $showingAdd) {
+            EditSavedMealSheet(meal: SavedMeal(id: UUID(), trainerID: trainer.id, name: "", description: "", proteinGrams: 0, carbGrams: 0, fatGrams: 0, notes: "", createdAt: Date())) { saved in
+                Task { _ = await services.savedMealService.createSavedMeal(saved); reload() }
+            }
+        }
+        .sheet(item: $editingMeal) { meal in
+            EditSavedMealSheet(meal: meal) { updated in
+                Task { await services.savedMealService.updateSavedMeal(updated); reload() }
+            }
+        }
+        .appScreen()
+        .task { reload() }
+    }
+
+    private func savedMealRow(_ meal: SavedMeal) -> some View {
+        FitCard {
+            HStack(spacing: 12) {
+                FitIconChip(systemName: "bookmark.fill", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 36)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(meal.name)
+                        .font(.custom("Archivo-ExtraBold", size: 15))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(meal.description.isEmpty ? "Nessuna descrizione" : meal.description)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        .lineLimit(1)
+                    HStack(spacing: 8) {
+                        macroTag("P \(Int(meal.proteinGrams))g", DesignSystem.Colors.teal)
+                        macroTag("C \(Int(meal.carbGrams))g", DesignSystem.Colors.amber)
+                        macroTag("G \(Int(meal.fatGrams))g", DesignSystem.Colors.limeDark)
+                        macroTag("\(Int(meal.kcal)) kcal", DesignSystem.Colors.indigo)
+                    }
+                }
+                Spacer()
+                Menu {
+                    Button("Modifica") { editingMeal = meal }
+                    Button("Elimina", role: .destructive) {
+                        Task { await services.savedMealService.deleteSavedMeal(meal); reload() }
+                    }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        .frame(width: 32, height: 32)
+                }
+            }
+        }
+    }
+
+    private func macroTag(_ text: String, _ color: Color) -> some View {
+        Text(text)
+            .font(DesignSystem.Typography.labelSM())
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.1))
+            .clipShape(Capsule())
+    }
+
+    private func reload() {
+        Task { meals = await services.savedMealService.fetchSavedMeals(for: trainer.id) }
+    }
+}
+
+struct EditSavedMealSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var meal: SavedMeal
+    let onSave: (SavedMeal) -> Void
+
+    init(meal: SavedMeal, onSave: @escaping (SavedMeal) -> Void) {
+        _meal = State(initialValue: meal)
+        self.onSave = onSave
+    }
+
+    var computedKcal: Int { Int(meal.proteinGrams * 4 + meal.carbGrams * 4 + meal.fatGrams * 9) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    FitInputField(label: "Nome pasto", text: $meal.name)
+                    FitInputField(label: "Descrizione / alimenti", text: $meal.description)
+                    SectionLabel(text: "Macro")
+                    HStack(spacing: 10) {
+                        macroInput("Proteine", value: $meal.proteinGrams, color: DesignSystem.Colors.teal)
+                        macroInput("Carbo", value: $meal.carbGrams, color: DesignSystem.Colors.amber)
+                        macroInput("Grassi", value: $meal.fatGrams, color: DesignSystem.Colors.limeDark)
+                    }
+                    FitCard {
+                        HStack {
+                            FitIconChip(systemName: "flame.fill", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 30)
+                            Text("Calorie calcolate")
+                                .font(DesignSystem.Typography.labelMD())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            Spacer()
+                            Text("\(computedKcal) kcal")
+                                .font(.custom("Archivo-ExtraBold", size: 18))
+                                .foregroundStyle(DesignSystem.Colors.teal)
+                        }
+                    }
+                    FitInputField(label: "Note (opzionale)", text: $meal.notes)
+                    AccentButton(title: "Salva pasto", color: DesignSystem.Colors.teal) {
+                        onSave(meal)
+                        dismiss()
+                    }
+                    .disabled(meal.name.isEmpty)
+                }
+                .padding(20)
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla") { dismiss() }.foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+            .appScreen()
+        }
+    }
+
+    private func macroInput(_ label: String, value: Binding<Double>, color: Color) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(label).font(DesignSystem.Typography.labelSM()).foregroundStyle(color)
+                TextField("0", value: value, format: .number)
+                    .keyboardType(.decimalPad)
+                    .font(.custom("Archivo-Black", size: 18))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text("g").font(DesignSystem.Typography.labelSM()).foregroundStyle(DesignSystem.Colors.txtSecondary)
             }
         }
     }

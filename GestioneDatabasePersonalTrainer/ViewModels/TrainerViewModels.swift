@@ -254,6 +254,13 @@ final class WorkoutPlansViewModel: ObservableObject {
             load()
         }
     }
+
+    func createPlan(_ plan: WorkoutPlan) {
+        Task<Void, Never>(priority: nil) {
+            _ = await service.createWorkoutPlan(plan)
+            load()
+        }
+    }
 }
 
 @MainActor
@@ -292,6 +299,13 @@ final class NutritionPlansViewModel: ObservableObject {
             ]
         )
 
+        Task<Void, Never>(priority: nil) {
+            _ = await service.createNutritionPlan(plan)
+            load()
+        }
+    }
+
+    func createPlan(_ plan: NutritionPlan) {
         Task<Void, Never>(priority: nil) {
             _ = await service.createNutritionPlan(plan)
             load()

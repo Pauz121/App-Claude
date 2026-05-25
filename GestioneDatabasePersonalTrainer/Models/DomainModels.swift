@@ -121,6 +121,7 @@ struct WorkoutPlan: Identifiable, Codable, Hashable {
     var endDate: Date
     var status: PlanStatus
     var days: [WorkoutDay]
+    var withTrainer: Bool = false
 }
 
 enum PlanStatus: String, Codable, CaseIterable, Identifiable {
@@ -171,6 +172,7 @@ struct Meal: Identifiable, Codable, Hashable {
     var time: Date
     var foods: [MealFood]
     var notes: String
+    var dayIndex: Int = 0
 }
 
 struct MealFood: Identifiable, Codable, Hashable {
@@ -178,6 +180,11 @@ struct MealFood: Identifiable, Codable, Hashable {
     var name: String
     var quantity: String
     var notes: String
+    var proteinGrams: Double = 0
+    var carbGrams: Double = 0
+    var fatGrams: Double = 0
+
+    var kcal: Double { proteinGrams * 4 + carbGrams * 4 + fatGrams * 9 }
 }
 
 struct ProgressEntry: Identifiable, Codable, Hashable {
@@ -193,6 +200,20 @@ struct ProgressEntry: Identifiable, Codable, Hashable {
     var sidePhotoName: String?
     var backPhotoName: String?
     var notes: String
+}
+
+struct SavedMeal: Identifiable, Codable, Hashable {
+    var id: UUID
+    var trainerID: UUID
+    var name: String
+    var description: String
+    var proteinGrams: Double
+    var carbGrams: Double
+    var fatGrams: Double
+    var notes: String
+    var createdAt: Date
+
+    var kcal: Double { proteinGrams * 4 + carbGrams * 4 + fatGrams * 9 }
 }
 
 enum DailyGoalType: String, Codable, CaseIterable, Identifiable {

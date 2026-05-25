@@ -46,6 +46,7 @@ final class AppServices: ObservableObject {
     let activitySummaryService: ActivitySummaryService
     let streakService: StreakService
     let trainerInsightsService: TrainerInsightsService
+    let savedMealService: SavedMealService
 
     init(database: MockDatabase = .shared, supabase: SupabaseManager = .shared) {
         self.database = database
@@ -72,6 +73,7 @@ final class AppServices: ObservableObject {
             activitySummaryService: activitySummaryService,
             streakService: streakService
         )
+        savedMealService = SavedMealService(database: database)
     }
 }
 
@@ -700,5 +702,33 @@ final class CatalogService {
             URLQueryItem(name: "select", value: "*"),
             URLQueryItem(name: "order", value: "level.asc,name.asc")
         ])) ?? []
+    }
+}
+
+@MainActor
+final class SavedMealService {
+    private let database: MockDatabase
+
+    init(database: MockDatabase) {
+        self.database = database
+    }
+
+    func fetchSavedMeals(for trainerID: UUID) async -> [SavedMeal] {
+        database.savedMeals.filter { $0.trainerID == trainerID }.sorted { $0.name < $1.name }
+    }
+
+    func createSavedMeal(_ meal: SavedMeal) async -> SavedMeal {
+        database.savedMeals.append(meal)
+        return meal
+    }
+
+    func updateSavedMeal(_ meal: SavedMeal) async {
+        if let index = database.savedMeals.firstIndex(where: { $0.id == meal.id }) {
+            database.savedMeals[index] = meal
+        }
+    }
+
+    func deleteSavedMeal(_ meal: SavedMeal) async {
+        database.savedMeals.removeAll { $0.id == meal.id }
     }
 }

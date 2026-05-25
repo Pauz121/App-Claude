@@ -445,7 +445,7 @@ struct ClientWorkoutDetailView: View {
                 .transition(.scale.combined(with: .opacity))
             }
         }
-        .navigationTitle("‹ Giorni")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $editingWeight) { exercise in
             WeightEditSheet(exercise: exercise) { newWeight in
@@ -862,7 +862,7 @@ private struct DietDayDetailView: View {
             }
             .padding(20)
         }
-        .navigationTitle("‹ Dieta")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $selectedMeal) { meal in
             MealDetailSheet(meal: meal, kcal: mealKcal)
@@ -1318,7 +1318,7 @@ struct ClientProfileView: View {
             }
             .padding(20)
         }
-        .navigationTitle("‹ Oggi")
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .appScreen()
     }

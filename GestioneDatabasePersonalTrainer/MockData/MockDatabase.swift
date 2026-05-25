@@ -12,6 +12,7 @@ final class MockDatabase {
     var nutritionPlans: [NutritionPlan]
     var progressEntries: [ProgressEntry]
     var accessCodes: [AccessCode]
+    var savedMeals: [SavedMeal]
 
     private init() {
         let trainerID = UUID(uuidString: "8D3E2657-0500-4D69-A37A-C3BD763C0B01")!
@@ -380,5 +381,11 @@ final class MockDatabase {
         accessCodes = clients.map {
             AccessCode(id: UUID(), code: $0.accessCode, trainerID: trainerID, clientID: $0.id, createdAt: $0.joinedAt, isActive: true)
         }
+        savedMeals = [
+            SavedMeal(id: UUID(), trainerID: trainerID, name: "Colazione proteica", description: "Yogurt greco + avena + frutti rossi", proteinGrams: 28, carbGrams: 42, fatGrams: 6, notes: "", createdAt: Date()),
+            SavedMeal(id: UUID(), trainerID: trainerID, name: "Pranzo base", description: "Riso + pollo + verdure", proteinGrams: 45, carbGrams: 65, fatGrams: 10, notes: "Olio EVO 10g aggiuntivo", createdAt: Date()),
+            SavedMeal(id: UUID(), trainerID: trainerID, name: "Cena leggera", description: "Salmone + patate + insalata", proteinGrams: 38, carbGrams: 38, fatGrams: 20, notes: "", createdAt: Date()),
+            SavedMeal(id: UUID(), trainerID: trainerID, name: "Spuntino proteico", description: "Skyr + mandorle", proteinGrams: 18, carbGrams: 14, fatGrams: 9, notes: "", createdAt: Date())
+        ]
     }
 }
