@@ -227,7 +227,7 @@ struct ClientDashboardView: View {
     }
 
     private var streakPill: some View {
-        Text("\(viewModel.checkInStreak?.currentCount ?? 0) giorni di fila")
+        Text("🔥 \(viewModel.checkInStreak?.currentCount ?? 0) giorni di fila")
             .font(DesignSystem.Typography.labelSM())
             .foregroundStyle(DesignSystem.Colors.amber)
             .padding(.horizontal, 10)
@@ -678,8 +678,8 @@ private struct WorkoutCompletionOverlay: View {
                     .frame(width: 110, height: 110)
                     .scaleEffect(animate ? 1.08 : 0.76)
                     .opacity(animate ? 1 : 0.6)
-                    .overlay(Text("✓").font(.system(size: 58, weight: .black)).foregroundStyle(DesignSystem.Colors.limeDark))
-                Text("Allenamento completato!")
+                    .overlay(Text("🎉").font(.system(size: 52)))
+                Text("Allenamento completato! 💪")
                     .font(.custom("Archivo-Black", size: 30))
                     .foregroundStyle(.white)
                     .multilineTextAlignment(.center)

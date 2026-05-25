@@ -145,7 +145,7 @@ struct DailyCheckInView: View {
                 .frame(width: 110, height: 110)
                 .scaleEffect(completionAnimated ? 1 : 0.75)
                 .shadow(color: DesignSystem.Colors.lime.opacity(0.32), radius: 22)
-                .overlay(Text("✓").font(.system(size: 56, weight: .black)).foregroundStyle(DesignSystem.Colors.limeDark))
+                .overlay(Text("🎉").font(.system(size: 50)))
             Text("Check-in fatto!")
                 .font(.custom("Archivo-Black", size: 30))
                 .foregroundStyle(DesignSystem.Colors.txtPrimary)
