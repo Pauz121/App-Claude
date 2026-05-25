@@ -781,7 +781,12 @@ struct CreateWorkoutPlanView: View {
                             switch step {
                             case 0: stepZero
                             case 1: stepOne
-                            case 2: withTrainer ? stepTwoA : stepTwoB
+                            case 2:
+                                if withTrainer {
+                                    stepTwoA
+                                } else {
+                                    stepTwoB
+                                }
                             case 3: stepThree
                             case 4: stepFour
                             default: EmptyView()
