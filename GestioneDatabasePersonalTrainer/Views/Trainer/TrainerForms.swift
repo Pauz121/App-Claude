@@ -235,7 +235,7 @@ struct AddMachineView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var machine: Machine
     @State private var catalog: [MachineCatalogDTO] = []
-    @State private var selectedCatalogID: UUID?
+    @State private var selectedCatalogID = ""
     let catalogService: CatalogService?
     let onSave: (Machine) -> Void
 
@@ -251,13 +251,16 @@ struct AddMachineView: View {
                 if !catalog.isEmpty {
                     Section("Catalogo globale") {
                         Picker("Scegli dal catalogo", selection: $selectedCatalogID) {
-                            Text("Personalizzato").tag(nil as UUID?)
+                            Text("Personalizzato").tag("")
                             ForEach(catalog) { item in
-                                Text("\(item.name) - \(item.muscleGroup)").tag(item.id as UUID?)
+                                Text("\(item.name) - \(item.muscleGroup)").tag(item.id.uuidString)
                             }
                         }
                         .onChange(of: selectedCatalogID) { _, newValue in
-                            guard let newValue, let item = catalog.first(where: { $0.id == newValue }) else { return }
+                            guard
+                                let selectedID = UUID(uuidString: newValue),
+                                let item = catalog.first(where: { $0.id == selectedID })
+                            else { return }
                             machine.name = item.name
                             machine.muscleGroup = MuscleGroup.allCases.first(where: { $0.rawValue == item.muscleGroup }) ?? .fullBody
                             machine.description = item.description ?? ""
@@ -304,7 +307,7 @@ struct AddMachineView: View {
 struct CreateWorkoutPlanView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedClientID: UUID
-    @State private var selectedTemplateID: UUID?
+    @State private var selectedTemplateID = ""
     @State private var templates: [WorkoutTemplateDTO] = []
     @State private var exercises: [ExerciseCatalogDTO] = []
     @State private var name = "Ipertrofia 4 settimane"
@@ -334,13 +337,16 @@ struct CreateWorkoutPlanView: View {
                 Section("Scheda") {
                     if !templates.isEmpty {
                         Picker("Template", selection: $selectedTemplateID) {
-                            Text("Nessun template").tag(nil as UUID?)
+                            Text("Nessun template").tag("")
                             ForEach(templates) { template in
-                                Text(template.name).tag(template.id as UUID?)
+                                Text(template.name).tag(template.id.uuidString)
                             }
                         }
                         .onChange(of: selectedTemplateID) { _, newValue in
-                            guard let newValue, let template = templates.first(where: { $0.id == newValue }) else { return }
+                            guard
+                                let selectedID = UUID(uuidString: newValue),
+                                let template = templates.first(where: { $0.id == selectedID })
+                            else { return }
                             name = template.name
                             goal = template.goal ?? goal
                         }
@@ -381,7 +387,7 @@ struct CreateWorkoutPlanView: View {
 struct CreateNutritionPlanView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedClientID: UUID
-    @State private var selectedMealTemplateID: UUID?
+    @State private var selectedMealTemplateID = ""
     @State private var mealTemplates: [MealTemplateDTO] = []
     @State private var foods: [FoodCatalogDTO] = []
     @State private var calories = 2100
@@ -421,9 +427,9 @@ struct CreateNutritionPlanView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         Picker("Pasto base", selection: $selectedMealTemplateID) {
-                            Text("Nessuno").tag(nil as UUID?)
+                            Text("Nessuno").tag("")
                             ForEach(mealTemplates) { template in
-                                Text(template.name).tag(template.id as UUID?)
+                                Text(template.name).tag(template.id.uuidString)
                             }
                         }
                     }
