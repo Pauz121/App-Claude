@@ -272,22 +272,35 @@ enum SupabaseMapper {
     }
 
     static func client(from dto: ClientDTO) -> Client {
+        let id = dto.id ?? UUID()
+        let email = dto.email ?? ""
+        let phone = dto.phone ?? ""
+        let birthDate = parseDate(dto.birthDate) ?? Date()
+        let heightCm = dto.heightCm ?? 0
+        let initialWeightKg = dto.initialWeightKg ?? 0
+        let currentWeightKg = dto.currentWeightKg ?? initialWeightKg
+        let goal = dto.goal ?? ""
+        let accessCode = dto.accessCode ?? ""
+        let isRegistered = dto.isRegistered ?? (dto.userId != nil)
+        let joinedAt = parseDateTime(dto.joinedAt) ?? Date()
+        let trainerNotes = dto.notes ?? ""
+
         Client(
-            id: dto.id ?? UUID(),
+            id: id,
             trainerID: dto.trainerId,
             firstName: dto.firstName,
             lastName: dto.lastName,
-            email: dto.email ?? "",
-            phone: dto.phone ?? "",
-            birthDate: parseDate(dto.birthDate) ?? Date(),
-            heightCm: dto.heightCm ?? 0,
-            initialWeightKg: dto.initialWeightKg ?? 0,
-            currentWeightKg: dto.currentWeightKg ?? dto.initialWeightKg ?? 0,
-            goal: dto.goal ?? "",
-            accessCode: dto.accessCode ?? "",
-            isRegistered: dto.isRegistered ?? dto.userId != nil,
-            joinedAt: parseDateTime(dto.joinedAt) ?? Date(),
-            trainerNotes: dto.notes ?? ""
+            email: email,
+            phone: phone,
+            birthDate: birthDate,
+            heightCm: heightCm,
+            initialWeightKg: initialWeightKg,
+            currentWeightKg: currentWeightKg,
+            goal: goal,
+            accessCode: accessCode,
+            isRegistered: isRegistered,
+            joinedAt: joinedAt,
+            trainerNotes: trainerNotes
         )
     }
 

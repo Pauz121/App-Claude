@@ -487,8 +487,8 @@ struct ClientDetailView: View {
     private var progressTab: some View {
         VStack(spacing: 12) {
             HStack(spacing: 10) {
-                compactProgress("Peso", "\(client.currentWeightKg, specifier: "%.1f")kg", DesignSystem.Colors.limeDark)
-                compactProgress("Inizio", "\(client.initialWeightKg, specifier: "%.1f")kg", DesignSystem.Colors.indigo)
+                compactProgress("Peso", String(format: "%.1fkg", client.currentWeightKg), DesignSystem.Colors.limeDark)
+                compactProgress("Inizio", String(format: "%.1fkg", client.initialWeightKg), DesignSystem.Colors.indigo)
             }
             FitCard {
                 Chart(progressEntries.sorted { $0.date < $1.date }) { entry in

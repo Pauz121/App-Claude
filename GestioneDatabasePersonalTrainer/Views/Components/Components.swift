@@ -585,7 +585,7 @@ struct ClientRowView: View {
             Spacer()
 
             VStack(alignment: .trailing, spacing: 5) {
-                Text("\(client.currentWeightKg, specifier: "%.1f") kg")
+                Text(String(format: "%.1f kg", client.currentWeightKg))
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(AppColors.textPrimary)
                 Image(systemName: "chevron.right")

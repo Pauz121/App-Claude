@@ -586,7 +586,7 @@ private struct WeightEditSheet: View {
                 .foregroundStyle(DesignSystem.Colors.txtPrimary)
             HStack(spacing: 22) {
                 stepButton("-") { weight = max(0, weight - 1.25) }
-                Text("\(weight, specifier: "%.2f") kg")
+                Text(String(format: "%.2f kg", weight))
                     .font(.custom("Archivo-Black", size: 36))
                     .foregroundStyle(DesignSystem.Colors.txtPrimary)
                     .lineLimit(1)
@@ -838,7 +838,7 @@ private struct DietDayDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                Text("OBIETTIVO · \(plan.targetWeightKg, specifier: "%.1f") KG")
+                Text(String(format: "OBIETTIVO · %.1f KG", plan.targetWeightKg))
                     .font(DesignSystem.Typography.sectionLabel())
                     .tracking(1.8)
                     .foregroundStyle(DesignSystem.Colors.txtSecondary)
@@ -1089,7 +1089,7 @@ struct ClientProgressView: View {
     private var measuresView: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 10) {
-                miniStat(icon: "scalemass.fill", color: DesignSystem.Colors.limeDark, value: "\(client.currentWeightKg, specifier: "%.1f")kg", subtitle: "peso attuale")
+                miniStat(icon: "scalemass.fill", color: DesignSystem.Colors.limeDark, value: String(format: "%.1fkg", client.currentWeightKg), subtitle: "peso attuale")
                 miniStat(icon: "chart.bar.fill", color: DesignSystem.Colors.amber, value: deltaText, subtitle: "dall'inizio · giorni")
             }
 
@@ -1196,12 +1196,12 @@ struct ClientProgressView: View {
                     .padding(.vertical, 22)
             }
             HStack {
-                Text("Inizio: \(data.first?.weight ?? 0, specifier: "%.1f")kg")
+                Text(String(format: "Inizio: %.1fkg", data.first?.weight ?? 0))
                 Spacer()
-                Text("Attuale: \(data.last?.weight ?? 0, specifier: "%.1f")kg")
+                Text(String(format: "Attuale: %.1fkg", data.last?.weight ?? 0))
                     .foregroundStyle(DesignSystem.Colors.limeDark)
                 Spacer()
-                TrendBadge(value: "+\(max((data.last?.weight ?? 0) - (data.first?.weight ?? 0), 0), specifier: "%.1f")kg")
+                TrendBadge(value: String(format: "+%.1fkg", max((data.last?.weight ?? 0) - (data.first?.weight ?? 0), 0)))
             }
             .font(DesignSystem.Typography.labelSM())
             .foregroundStyle(DesignSystem.Colors.txtSecondary)
@@ -1241,16 +1241,16 @@ struct ClientProgressView: View {
     }
 
     private var minWeightText: String {
-        "\(weightEntries.map(\.weightKg).min() ?? client.currentWeightKg, specifier: "%.1f") kg"
+        String(format: "%.1f kg", weightEntries.map(\.weightKg).min() ?? client.currentWeightKg)
     }
 
     private var maxWeightText: String {
-        "\(weightEntries.map(\.weightKg).max() ?? client.currentWeightKg, specifier: "%.1f") kg"
+        String(format: "%.1f kg", weightEntries.map(\.weightKg).max() ?? client.currentWeightKg)
     }
 
     private var deltaText: String {
         let delta = client.currentWeightKg - client.initialWeightKg
-        return "\(delta, specifier: "%+.1f")kg"
+        return String(format: "%+.1fkg", delta)
     }
 }
 
@@ -1284,11 +1284,11 @@ struct ClientProfileView: View {
 
                 FitCard {
                     VStack(spacing: 0) {
-                        profileRow("Altezza", "\(client.heightCm, specifier: "%.0f") cm")
+                        profileRow("Altezza", String(format: "%.0f cm", client.heightCm))
                         Divider().background(DesignSystem.Colors.bgLine)
-                        profileRow("Peso iniziale", "\(client.initialWeightKg, specifier: "%.1f") kg")
+                        profileRow("Peso iniziale", String(format: "%.1f kg", client.initialWeightKg))
                         Divider().background(DesignSystem.Colors.bgLine)
-                        profileRow("Peso attuale", "\(client.currentWeightKg, specifier: "%.1f") kg", valueColor: DesignSystem.Colors.limeDark)
+                        profileRow("Peso attuale", String(format: "%.1f kg", client.currentWeightKg), valueColor: DesignSystem.Colors.limeDark)
                         Divider().background(DesignSystem.Colors.bgLine)
                         profileRow("Obiettivo", client.goal)
                         Divider().background(DesignSystem.Colors.bgLine)
