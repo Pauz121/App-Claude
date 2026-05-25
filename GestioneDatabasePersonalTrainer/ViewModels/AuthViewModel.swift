@@ -111,6 +111,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func loginTrainerDemo() {
+        AppConfiguration.isDemoMode = true
         isLoading = false
         AppConfiguration.useMockData = true
         errorMessage = nil
@@ -118,6 +119,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func loginClientDemo() {
+        AppConfiguration.isDemoMode = true
         isLoading = false
         AppConfiguration.useMockData = true
         do {
@@ -129,6 +131,7 @@ final class AuthViewModel: ObservableObject {
     }
 
     func logout() {
+        AppConfiguration.isDemoMode = false
         Task<Void, Never>(priority: nil) {
             await authService.logout()
             AppConfiguration.useMockData = false
