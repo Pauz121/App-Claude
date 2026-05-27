@@ -139,7 +139,13 @@ final class AppointmentsViewModel: ObservableObject {
     }
 
     func weekDates() -> [Date] {
-        (-3...10).map { .daysFromNow($0) }
+        var cal = Calendar(identifier: .gregorian)
+        cal.firstWeekday = 2
+        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)
+        guard let monday = cal.date(from: comps) else {
+            return (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: selectedDate) }
+        }
+        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: monday) }
     }
 
     func load() {

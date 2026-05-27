@@ -292,17 +292,23 @@ final class ClientNutritionViewModel: ObservableObject {
 @MainActor
 final class ClientProgressViewModel: ObservableObject {
     @Published var entries: [ProgressEntry] = []
+    @Published var exerciseWeightHistory: [ExerciseWeightHistoryDTO] = []
 
     private let client: Client
     private let service: ProgressService
+    private let workoutService: WorkoutService
 
-    init(client: Client, service: ProgressService) {
+    init(client: Client, service: ProgressService, workoutService: WorkoutService) {
         self.client = client
         self.service = service
+        self.workoutService = workoutService
     }
 
     func load() {
-        Task<Void, Never>(priority: nil) { entries = await service.fetchProgressEntries(for: client.id) }
+        Task<Void, Never>(priority: nil) {
+            entries = await service.fetchProgressEntries(for: client.id)
+            exerciseWeightHistory = await workoutService.fetchExerciseWeightHistory(for: client.id)
+        }
     }
 
     func addEntry(weight: Double, waist: Double, chest: Double, arm: Double, leg: Double, notes: String) {

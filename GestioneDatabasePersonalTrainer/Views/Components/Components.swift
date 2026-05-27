@@ -104,6 +104,10 @@ struct TrendBadge: View {
         Text(value)
             .font(DesignSystem.Typography.labelSM())
             .foregroundStyle(DesignSystem.Colors.trend)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(DesignSystem.Colors.trend.opacity(0.12))
+            .clipShape(Capsule())
     }
 }
 
@@ -292,6 +296,64 @@ struct StatCard: View {
                 .offset(x: -AppSpacing.md)
         }
         .appCard()
+    }
+}
+
+struct DashboardStatCard: View {
+    let icon: String
+    let value: String
+    let title: String
+    let delta: String?
+    let iconColor: Color
+    let iconBackground: Color
+    var onTap: (() -> Void)? = nil
+
+    var body: some View {
+        Button { onTap?() } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top) {
+                    FitIconChip(systemName: icon, color: iconColor, background: iconBackground, size: 30)
+                    Spacer()
+                    if let delta {
+                        TrendBadge(value: delta)
+                    }
+                }
+                Spacer(minLength: 4)
+                Text(value)
+                    .font(DesignSystem.Typography.numberLG())
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text(title)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
+            .background(DesignSystem.Colors.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(KPICardButtonStyle())
+        .accessibilityLabel(accessibilityText)
+    }
+
+    private var accessibilityText: String {
+        var text = "\(value) \(title)"
+        if let delta {
+            text += ", più \(delta.replacingOccurrences(of: "+", with: ""))"
+        }
+        return text
+    }
+}
+
+private struct KPICardButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
     }
 }
 
@@ -818,5 +880,197 @@ struct MachineCard: View {
             }
         }
         .appCard()
+    }
+}
+
+struct UserAvatarView: View {
+    let imageUrl: String?
+    let firstName: String
+    let lastName: String
+    var size: CGFloat = 44
+    var gradient: [Color] = [DesignSystem.Colors.indigo, DesignSystem.Colors.lime]
+
+    var body: some View {
+        Group {
+            if let urlString = imageUrl, !urlString.isEmpty, let url = URL(string: urlString) {
+                AsyncImage(url: url) { phase in
+                    if case .success(let img) = phase {
+                        img.resizable().scaledToFill()
+                    } else {
+                        initialsView
+                    }
+                }
+            } else {
+                initialsView
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.black.opacity(0.06), lineWidth: 1))
+    }
+
+    private var initialsView: some View {
+        AvatarView(
+            initials: "\(firstName.first.map(String.init) ?? "")\(lastName.first.map(String.init) ?? "")",
+            gradient: gradient,
+            size: size
+        )
+    }
+}
+
+struct TrainerNotificationsSheet: View {
+    let insights: [TrainerClientInsight]
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if insights.isEmpty {
+                        EmptyStateView(
+                            title: "Nessun alert",
+                            message: "Tutto tranquillo. Nessun cliente necessita attenzione in questo momento.",
+                            icon: "checkmark.seal.fill"
+                        )
+                        .padding(.top, 20)
+                    } else {
+                        LazyVStack(spacing: 10) {
+                            ForEach(insights) { insight in
+                                notificationRow(insight)
+                            }
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle("Notifiche")
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Chiudi") { dismiss() }
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
+            }
+            .appScreen()
+        }
+    }
+
+    private func notificationRow(_ insight: TrainerClientInsight) -> some View {
+        FitCard {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(severityColor(insight.severity).opacity(0.12))
+                        .frame(width: 38, height: 38)
+                    Image(systemName: insight.iconName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(severityColor(insight.severity))
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(insight.clientName)
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(insight.message)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        .lineLimit(2)
+                }
+                Spacer()
+            }
+        }
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(severityColor(insight.severity))
+                .frame(width: 3)
+                .padding(.vertical, 14)
+        }
+    }
+
+    private func severityColor(_ severity: InsightSeverity) -> Color {
+        switch severity {
+        case .info: return DesignSystem.Colors.indigo
+        case .success: return DesignSystem.Colors.teal
+        case .warning: return DesignSystem.Colors.amber
+        case .alert: return Color(hex: "E57373")
+        }
+    }
+}
+
+struct QuickActionCard: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    let color: Color
+    let colorBackground: Color
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                FitIconChip(systemName: icon, color: color, background: colorBackground, size: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(subtitle)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+            .padding(14)
+            .background(DesignSystem.Colors.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(Color.black.opacity(0.06), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.04), radius: 8, x: 0, y: 4)
+        }
+        .buttonStyle(KPICardButtonStyle())
+    }
+}
+
+#Preview("Dashboard Stat Cards") {
+    ZStack {
+        Color(hex: "F3F4FA").ignoresSafeArea()
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            DashboardStatCard(
+                icon: "person.2.fill",
+                value: "24",
+                title: "Clienti attivi",
+                delta: "+3",
+                iconColor: DesignSystem.Colors.indigo,
+                iconBackground: DesignSystem.Colors.indigoBg
+            )
+            DashboardStatCard(
+                icon: "calendar.badge.clock",
+                value: "5",
+                title: "Sessioni oggi",
+                delta: nil,
+                iconColor: DesignSystem.Colors.amber,
+                iconBackground: DesignSystem.Colors.amberBg
+            )
+            DashboardStatCard(
+                icon: "list.clipboard.fill",
+                value: "18",
+                title: "Schede attive",
+                delta: "+2",
+                iconColor: DesignSystem.Colors.teal,
+                iconBackground: DesignSystem.Colors.tealBg
+            )
+            DashboardStatCard(
+                icon: "sparkles",
+                value: "2",
+                title: "Nuovi iscritti",
+                delta: "+10",
+                iconColor: DesignSystem.Colors.limeDark,
+                iconBackground: DesignSystem.Colors.limeBg
+            )
+        }
+        .padding(20)
     }
 }

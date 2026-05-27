@@ -34,6 +34,7 @@ struct TrainerDashboardView: View {
     @State private var showingAddAppointment = false
     @State private var showingCreateWorkout = false
     @State private var showingCreateNutrition = false
+    @State private var showingAlerts = false
     let trainer: Trainer
     let services: AppServices
 
@@ -49,13 +50,6 @@ struct TrainerDashboardView: View {
                 VStack(alignment: .leading, spacing: 18) {
                     header
                     kpiGrid
-
-                    NavigationLink {
-                        TrainerAlertListView(insights: viewModel.insights, clients: viewModel.clients)
-                    } label: {
-                        feedbackAlertRow
-                    }
-                    .buttonStyle(.plain)
 
                     SectionLabel(text: "Azioni rapide")
                     quickActions
@@ -90,6 +84,10 @@ struct TrainerDashboardView: View {
                     Task { _ = await services.nutritionService.createNutritionPlan(plan); reload() }
                 }
             }
+            .sheet(isPresented: $showingAlerts) {
+                TrainerNotificationsSheet(insights: viewModel.insights)
+                    .presentationDetents([.large])
+            }
             .appScreen()
             .task { reload() }
         }
@@ -107,89 +105,83 @@ struct TrainerDashboardView: View {
                     .foregroundStyle(DesignSystem.Colors.txtPrimary)
             }
             Spacer()
-            Text("PRO")
-                .font(DesignSystem.Typography.labelSM())
-                .foregroundStyle(.white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(DesignSystem.Colors.txtPrimary)
-                .clipShape(Capsule())
+            HStack(spacing: 10) {
+                Button { showingAlerts = true } label: {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: "bell")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            .frame(width: 36, height: 36)
+                            .background(DesignSystem.Colors.bgCard)
+                            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                                    .stroke(DesignSystem.Colors.bgLine, lineWidth: 1)
+                            )
+                        if !viewModel.insights.isEmpty {
+                            Circle()
+                                .fill(DesignSystem.Colors.amber)
+                                .frame(width: 9, height: 9)
+                                .offset(x: 2, y: -2)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+                Text("PRO")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(DesignSystem.Colors.txtPrimary)
+                    .clipShape(Capsule())
+            }
         }
     }
 
     private var kpiGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            kpi(icon: "person.2.fill", iconBg: DesignSystem.Colors.indigoBg, iconColor: DesignSystem.Colors.indigo, value: "\(viewModel.clients.count)", label: "clienti attivi", trend: "+\(viewModel.newClientsThisMonth)")
-            kpi(icon: "calendar.badge.clock", iconBg: DesignSystem.Colors.amberBg, iconColor: DesignSystem.Colors.amber, value: "\(viewModel.appointmentsToday)", label: "sessioni oggi")
-            kpi(icon: "list.clipboard.fill", iconBg: DesignSystem.Colors.tealBg, iconColor: DesignSystem.Colors.teal, value: "\(viewModel.activePlans)", label: "schede attive")
-            kpi(icon: "sparkles", iconBg: DesignSystem.Colors.limeBg, iconColor: DesignSystem.Colors.limeDark, value: "\(viewModel.newClientsThisMonth)", label: "nuovi iscritti", trend: "+\(viewModel.newClientsThisMonth)")
-        }
-    }
-
-    private func kpi(icon: String, iconBg: Color, iconColor: Color, value: String, label: String, trend: String? = nil) -> some View {
-        FitCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    FitIconChip(systemName: icon, color: iconColor, background: iconBg, size: 30)
-                    Spacer()
-                    if let trend {
-                        TrendBadge(value: trend)
-                    }
-                }
-                Text(value)
-                    .font(.custom("Archivo-ExtraBold", size: 22))
-                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
-                Text(label)
-                    .font(DesignSystem.Typography.labelSM())
-                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
-            }
-        }
-    }
-
-    private var feedbackAlertRow: some View {
-        FitCard {
-            HStack(spacing: 12) {
-                FitIconChip(systemName: "exclamationmark.bubble.fill", color: DesignSystem.Colors.indigo, background: DesignSystem.Colors.indigoBg, size: 36)
-                Text("Feedback & Alert")
-                    .font(.custom("Archivo-ExtraBold", size: 15))
-                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
-                Spacer()
-                Text("\(viewModel.insights.count) nuovi")
-                    .font(DesignSystem.Typography.labelSM())
-                    .foregroundStyle(DesignSystem.Colors.amber)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(DesignSystem.Colors.amberBg)
-                    .clipShape(Capsule())
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
-            }
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            DashboardStatCard(
+                icon: "person.2.fill",
+                value: "\(viewModel.clients.count)",
+                title: "Clienti attivi",
+                delta: "+\(viewModel.newClientsThisMonth)",
+                iconColor: DesignSystem.Colors.indigo,
+                iconBackground: DesignSystem.Colors.indigoBg
+            )
+            DashboardStatCard(
+                icon: "calendar.badge.clock",
+                value: "\(viewModel.appointmentsToday)",
+                title: "Sessioni oggi",
+                delta: nil,
+                iconColor: DesignSystem.Colors.amber,
+                iconBackground: DesignSystem.Colors.amberBg
+            )
+            DashboardStatCard(
+                icon: "list.clipboard.fill",
+                value: "\(viewModel.activePlans)",
+                title: "Schede attive",
+                delta: nil,
+                iconColor: DesignSystem.Colors.teal,
+                iconBackground: DesignSystem.Colors.tealBg
+            )
+            DashboardStatCard(
+                icon: "sparkles",
+                value: "\(viewModel.newClientsThisMonth)",
+                title: "Nuovi iscritti",
+                delta: "+\(viewModel.newClientsThisMonth)",
+                iconColor: DesignSystem.Colors.limeDark,
+                iconBackground: DesignSystem.Colors.limeBg
+            )
         }
     }
 
     private var quickActions: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            quickAction("Nuovo cliente", "plus", action: { showingAddClient = true })
-            quickAction("Nuova scheda", "dumbbell.fill", action: { showingCreateWorkout = true })
-            quickAction("Nuovo piano", "fork.knife", action: { showingCreateNutrition = true })
-            quickAction("Appuntamento", "calendar.badge.plus", action: { showingAddAppointment = true })
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+            QuickActionCard(icon: "person.badge.plus", title: "Nuovo cliente", subtitle: "Aggiungi e genera codice accesso", color: DesignSystem.Colors.indigo, colorBackground: DesignSystem.Colors.indigoBg, action: { showingAddClient = true })
+            QuickActionCard(icon: "dumbbell.fill", title: "Nuova scheda", subtitle: "Crea piano allenamento", color: DesignSystem.Colors.teal, colorBackground: DesignSystem.Colors.tealBg, action: { showingCreateWorkout = true })
+            QuickActionCard(icon: "fork.knife", title: "Nuovo piano", subtitle: "Crea piano alimentare", color: DesignSystem.Colors.amber, colorBackground: DesignSystem.Colors.amberBg, action: { showingCreateNutrition = true })
+            QuickActionCard(icon: "calendar.badge.plus", title: "Appuntamento", subtitle: "Pianifica una sessione", color: DesignSystem.Colors.limeDark, colorBackground: DesignSystem.Colors.limeBg, action: { showingAddAppointment = true })
         }
-    }
-
-    private func quickAction(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            FitCard {
-                HStack(spacing: 10) {
-                    FitIconChip(systemName: icon, color: DesignSystem.Colors.indigo, background: DesignSystem.Colors.indigoBg, size: 34)
-                    Text(title)
-                        .font(.custom("Archivo-ExtraBold", size: 14))
-                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
-                        .lineLimit(2)
-                }
-            }
-        }
-        .buttonStyle(.plain)
     }
 
     private func reload() {
@@ -336,7 +328,7 @@ struct ClientsListView: View {
     private func trainerClientRow(_ client: Client) -> some View {
         FitCard {
             HStack(spacing: 12) {
-                AvatarView(initials: initials(client), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime], size: 44)
+                UserAvatarView(imageUrl: nil, firstName: client.firstName, lastName: client.lastName, size: 44, gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime])
                 VStack(alignment: .leading, spacing: 4) {
                     Text(client.fullName)
                         .font(.custom("Archivo-ExtraBold", size: 16))
@@ -367,17 +359,29 @@ struct ClientDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 18) {
-                VStack(spacing: 9) {
-                    AvatarView(initials: initials(client), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime], size: 70)
-                    Text(client.fullName)
-                        .font(DesignSystem.Typography.titleMD())
-                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
-                    Text(client.goal)
-                        .font(DesignSystem.Typography.labelMD())
-                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
-                    StatusPill(status: .active)
+                FitCard {
+                    HStack(spacing: 14) {
+                        UserAvatarView(imageUrl: nil, firstName: client.firstName, lastName: client.lastName, size: 52, gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime])
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(client.fullName)
+                                .font(.custom("Archivo-ExtraBold", size: 18))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            Text(client.goal.isEmpty ? "Nessun obiettivo" : client.goal)
+                                .font(DesignSystem.Typography.bodySM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            StatusPill(status: .active)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text(String(format: "%.1f kg", client.currentWeightKg))
+                                .font(.custom("Archivo-Black", size: 18))
+                                .foregroundStyle(DesignSystem.Colors.limeDark)
+                            Text("peso attuale")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                    }
                 }
-                .frame(maxWidth: .infinity)
 
                 detailTabs
 
@@ -542,17 +546,15 @@ struct AppointmentsCalendarView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Agenda")
-                                .font(.custom("Archivo-ExtraBold", size: 26))
-                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
-                            Text(viewModel.selectedDate.formatted(.dateTime.month(.wide).year()))
-                                .font(DesignSystem.Typography.labelMD())
-                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
-                        }
-                        Spacer()
+                    VStack(alignment: .center, spacing: 4) {
+                        Text("Agenda")
+                            .font(.custom("Archivo-ExtraBold", size: 26))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text(viewModel.selectedDate.formatted(.dateTime.month(.wide).year()))
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
                     }
+                    .frame(maxWidth: .infinity)
 
                     SegmentedPicker(options: CalendarMode.allCases, selection: $mode, title: \.title, accent: DesignSystem.Colors.indigo)
                     mode == .week ? AnyView(weekView) : AnyView(monthView)
@@ -763,7 +765,7 @@ struct TrainerMessagesView: View {
 
     private func conversationRow(_ client: Client) -> some View {
         HStack(spacing: 12) {
-            AvatarView(initials: initials(client), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime], size: 44)
+            UserAvatarView(imageUrl: nil, firstName: client.firstName, lastName: client.lastName, size: 44, gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime])
             VStack(alignment: .leading, spacing: 4) {
                 Text(client.fullName)
                     .font(.custom("Archivo-ExtraBold", size: 15))
@@ -801,7 +803,7 @@ struct TrainerConversationView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                AvatarView(initials: initials(client), gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime], size: 32)
+                UserAvatarView(imageUrl: nil, firstName: client.firstName, lastName: client.lastName, size: 32, gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.lime])
                 Text(client.fullName)
                     .font(.custom("Archivo-ExtraBold", size: 15))
                     .foregroundStyle(DesignSystem.Colors.txtPrimary)

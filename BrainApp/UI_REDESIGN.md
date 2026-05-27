@@ -144,6 +144,56 @@ Area cliente:
 - Alcune schermate secondarie restano solo parzialmente ridisegnate.
 - Le quick action per schede/diete si appoggiano ancora ai flussi template esistenti.
 
+## Restyling Dashboard Stat Cards
+
+Data: 2026-05-27
+
+### Cosa e stato cambiato
+
+Le KPI card della TrainerDashboardView erano inline (funzione `kpi()` privata). Sono state sostituite con il componente riutilizzabile `DashboardStatCard`.
+
+### Nuovo stile delle card
+
+- Sfondo bianco puro (`bgCard` = `#FFFFFF`)
+- Corner radius 18, continuo
+- Bordo `Color.black.opacity(0.06)` — quasi invisibile
+- Ombra `Color.black.opacity(0.04)`, radius 8, y 4 — delicatissima
+- Altezza minima 110pt, padding interno 16pt
+- Numero: `Archivo-Black` 26pt, colore `txtPrimary`
+- Titolo: `Sora-SemiBold` 11pt, colore `txtSecondary`
+- Icona: `FitIconChip` size 30, in alto a sinistra
+- Delta: `TrendBadge` (testo verde + capsule background verde 12% opacity), in alto a destra
+- Press feedback: `scaleEffect 0.97` via `KPICardButtonStyle`
+- Accessibility: `accessibilityLabel` con valore + titolo + delta
+
+### Componente creato
+
+`DashboardStatCard` — in `Views/Components/Components.swift`
+
+Firma:
+```swift
+struct DashboardStatCard: View {
+    let icon: String
+    let value: String
+    let title: String
+    let delta: String?
+    let iconColor: Color
+    let iconBackground: Color
+    var onTap: (() -> Void)? = nil
+}
+```
+
+### File modificati
+
+- `GestioneDatabasePersonalTrainer/Views/Components/Components.swift` — aggiunto `DashboardStatCard`, `KPICardButtonStyle`, aggiornato `TrendBadge` (capsule background), aggiunta `#Preview`
+- `GestioneDatabasePersonalTrainer/Views/Trainer/TrainerViews.swift` — `kpiGrid` aggiornato a `DashboardStatCard`, rimossa funzione `kpi()` inline
+
+### Riferimento visivo
+
+Card bianche con angoli arrotondati, icona colorata in alto sinistra, delta verde in capsule in alto destra, numero grande Archivo-Black in basso, titolo grigio sotto. Griglia 2 colonne. Stile iOS light premium.
+
+---
+
 ## Prossimi miglioramenti UI
 
 - Rifinire form di creazione cliente, appuntamento, scheda e dieta.

@@ -536,6 +536,15 @@ final class WorkoutService {
         )
         let _: [ExerciseWeightHistoryDTO]? = try? await supabase.insert("exercise_weight_history", value: dto)
     }
+
+    func fetchExerciseWeightHistory(for clientID: UUID) async -> [ExerciseWeightHistoryDTO] {
+        guard AppConfiguration.isSupabaseConfigured else { return [] }
+        return (try? await supabase.select("exercise_weight_history", queryItems: [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "client_id", value: "eq.\(clientID.uuidString)"),
+            URLQueryItem(name: "order", value: "session_date.asc")
+        ])) ?? []
+    }
 }
 
 @MainActor

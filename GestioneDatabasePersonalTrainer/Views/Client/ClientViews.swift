@@ -1,5 +1,6 @@
 import SwiftUI
 import Charts
+import PhotosUI
 
 struct ClientMainTabView: View {
     @EnvironmentObject private var services: AppServices
@@ -49,7 +50,7 @@ struct ClientDashboardView: View {
                     todayWorkoutCard
 
                     HStack(spacing: 12) {
-                        miniMetric(icon: "flame.fill", color: DesignSystem.Colors.teal, value: "2.350", subtitle: "kcal di oggi")
+                        miniMetric(icon: "flame.fill", color: DesignSystem.Colors.teal, value: viewModel.activeNutritionPlan.map { "\($0.dailyCalories)" } ?? "--", subtitle: "kcal di oggi")
                         stepsMiniCard
                     }
 
@@ -251,6 +252,7 @@ struct ClientDashboardView: View {
 
 struct ClientWorkoutView: View {
     @StateObject private var viewModel: ClientWorkoutViewModel
+    @State private var expandedWeek: Int? = 1
     let client: Client
     let services: AppServices
 
@@ -264,7 +266,7 @@ struct ClientWorkoutView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("SETTIMANA 1 DI \(max(viewModel.activePlan?.days.count ?? 1, 1))")
+                    Text("LE TUE SCHEDE")
                         .font(DesignSystem.Typography.sectionLabel())
                         .tracking(1.8)
                         .foregroundStyle(DesignSystem.Colors.txtSecondary)
@@ -273,15 +275,42 @@ struct ClientWorkoutView: View {
                         .foregroundStyle(DesignSystem.Colors.txtPrimary)
 
                     if let plan = viewModel.activePlan {
-                        LazyVStack(spacing: 12) {
-                            ForEach(plan.days.sorted { $0.dayIndex < $1.dayIndex }) { day in
-                                ClientWorkoutDayCard(
-                                    client: client,
-                                    services: services,
-                                    day: day,
-                                    isCompleted: viewModel.completedWorkoutDayIDs.contains(day.id)
-                                ) {
-                                    viewModel.toggleCompletion(for: day)
+                        LazyVStack(spacing: 16) {
+                            ForEach(weekGroups(for: plan), id: \.week) { group in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    Button {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                            expandedWeek = expandedWeek == group.week ? nil : group.week
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Text("SETTIMANA \(group.week)")
+                                                .font(DesignSystem.Typography.sectionLabel())
+                                                .tracking(1.8)
+                                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                            Spacer()
+                                            Image(systemName: "chevron.right")
+                                                .rotationEffect(.degrees(expandedWeek == group.week ? 90 : 0))
+                                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                                .font(.caption.weight(.bold))
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    if expandedWeek == group.week {
+                                        VStack(spacing: 10) {
+                                            ForEach(group.days) { day in
+                                                ClientWorkoutDayCard(
+                                                    client: client,
+                                                    services: services,
+                                                    day: day,
+                                                    isCompleted: viewModel.completedWorkoutDayIDs.contains(day.id)
+                                                ) {
+                                                    viewModel.toggleCompletion(for: day)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -296,6 +325,20 @@ struct ClientWorkoutView: View {
             .appScreen()
             .task { viewModel.load() }
         }
+    }
+
+    private func weekGroups(for plan: WorkoutPlan) -> [(week: Int, days: [WorkoutDay])] {
+        let sorted = plan.days.sorted { $0.dayIndex < $1.dayIndex }
+        guard !sorted.isEmpty else { return [] }
+        let daysBetween = Calendar.current.dateComponents([.day], from: plan.startDate, to: plan.endDate).day ?? 28
+        let totalWeeks = max(1, Int(ceil(Double(daysBetween) / 7.0)))
+        let daysPerWeek = max(1, Int(ceil(Double(sorted.count) / Double(totalWeeks))))
+        var groups: [Int: [WorkoutDay]] = [:]
+        for day in sorted {
+            let week = (day.dayIndex - 1) / daysPerWeek + 1
+            groups[week, default: []].append(day)
+        }
+        return groups.sorted { $0.key < $1.key }.map { (week: $0.key, days: $0.value) }
     }
 }
 
@@ -714,6 +757,7 @@ private struct WorkoutCompletionOverlay: View {
 
 struct ClientNutritionView: View {
     @StateObject private var viewModel: ClientNutritionViewModel
+    @State private var path: [Int] = []
     let client: Client
 
     init(client: Client, services: AppServices) {
@@ -722,7 +766,7 @@ struct ClientNutritionView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     Text("OBIETTIVO · \(client.goal.isEmpty ? "Percorso" : client.goal)")
@@ -737,9 +781,7 @@ struct ClientNutritionView: View {
                         nutritionSummary(plan)
                         LazyVStack(spacing: 12) {
                             ForEach(days, id: \.offset) { item in
-                                NavigationLink {
-                                    DietDayDetailView(plan: plan, dayOffset: item.offset)
-                                } label: {
+                                NavigationLink(value: item.offset) {
                                     dietDayCard(title: item.title, offset: item.offset, plan: plan)
                                 }
                                 .buttonStyle(.plain)
@@ -753,8 +795,16 @@ struct ClientNutritionView: View {
             }
             .navigationTitle("Dieta")
             .navigationBarTitleDisplayMode(.inline)
+            .navigationDestination(for: Int.self) { offset in
+                if let plan = viewModel.activePlan {
+                    DietDayDetailView(plan: plan, dayOffset: offset)
+                }
+            }
             .appScreen()
             .task { viewModel.load() }
+            .onChange(of: viewModel.activePlan) { _, plan in
+                if plan != nil && path.isEmpty { path = [0] }
+            }
         }
     }
 
@@ -1048,7 +1098,7 @@ struct ClientProgressView: View {
 
     init(client: Client, services: AppServices) {
         self.client = client
-        _viewModel = StateObject(wrappedValue: ClientProgressViewModel(client: client, service: services.progressService))
+        _viewModel = StateObject(wrappedValue: ClientProgressViewModel(client: client, service: services.progressService, workoutService: services.workoutService))
         _workoutViewModel = StateObject(wrappedValue: ClientWorkoutViewModel(client: client, service: services.workoutService))
     }
 
@@ -1174,8 +1224,9 @@ struct ClientProgressView: View {
     }
 
     private func exerciseChart(_ exercise: Exercise) -> some View {
-        let data = Array(weightEntries.enumerated()).map { (index, entry) in
-            ExerciseProgressPoint(label: "S\(index + 1)", weight: entry.weightKg + Double(index) * 0.4)
+        let history = viewModel.exerciseWeightHistory.filter { $0.exerciseId == exercise.id }
+        let data = history.enumerated().map { (index, entry) in
+            ExerciseProgressPoint(label: "S\(index + 1)", weight: entry.weightKg)
         }
         return VStack(alignment: .leading, spacing: 10) {
             if data.count > 1 {
@@ -1262,6 +1313,8 @@ private struct ExerciseProgressPoint: Identifiable {
 
 struct ClientProfileView: View {
     @EnvironmentObject private var authViewModel: AuthViewModel
+    @State private var selectedPhoto: PhotosPickerItem? = nil
+    @State private var avatarImage: Image? = nil
     let client: Client
 
     init(client: Client, services: AppServices) {
@@ -1272,7 +1325,34 @@ struct ClientProfileView: View {
         ScrollView {
             VStack(spacing: 18) {
                 VStack(spacing: 10) {
-                    AvatarView(initials: initials, gradient: [DesignSystem.Colors.lime, DesignSystem.Colors.teal], size: 70)
+                    PhotosPicker(selection: $selectedPhoto, matching: .images) {
+                        ZStack(alignment: .bottomTrailing) {
+                            Group {
+                                if let avatarImage {
+                                    avatarImage
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 70, height: 70)
+                                        .clipShape(Circle())
+                                        .overlay(Circle().stroke(Color.black.opacity(0.06), lineWidth: 1))
+                                } else {
+                                    AvatarView(initials: initials, gradient: [DesignSystem.Colors.lime, DesignSystem.Colors.teal], size: 70)
+                                }
+                            }
+                            Circle()
+                                .fill(DesignSystem.Colors.limeDark)
+                                .frame(width: 22, height: 22)
+                                .overlay(Image(systemName: "camera.fill").font(.system(size: 10)).foregroundStyle(.white))
+                        }
+                    }
+                    .onChange(of: selectedPhoto) { _, item in
+                        Task {
+                            if let data = try? await item?.loadTransferable(type: Data.self),
+                               let uiImage = UIImage(data: data) {
+                                avatarImage = Image(uiImage: uiImage)
+                            }
+                        }
+                    }
                     Text(client.fullName)
                         .font(DesignSystem.Typography.titleMD())
                         .foregroundStyle(DesignSystem.Colors.txtPrimary)
@@ -1395,7 +1475,7 @@ struct ClientChatView: View {
 
     private var chatHeader: some View {
         HStack(spacing: 10) {
-            AvatarView(initials: "MC", gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.teal], size: 38)
+            UserAvatarView(imageUrl: nil, firstName: "Marco", lastName: "C", size: 38, gradient: [DesignSystem.Colors.indigo, DesignSystem.Colors.teal])
             Text("Marco · coach")
                 .font(.custom("Archivo-ExtraBold", size: 16))
                 .foregroundStyle(DesignSystem.Colors.txtPrimary)
