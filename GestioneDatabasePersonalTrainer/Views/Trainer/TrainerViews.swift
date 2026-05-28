@@ -3,25 +3,31 @@ import Charts
 
 struct TrainerMainTabView: View {
     @EnvironmentObject private var services: AppServices
+    @State private var selectedTab = 0
     let trainer: Trainer
 
     var body: some View {
-        TabView {
-            TrainerDashboardView(trainer: trainer, services: services)
+        TabView(selection: $selectedTab) {
+            TrainerDashboardView(trainer: trainer, services: services, selectedTab: $selectedTab)
                 .tabItem { Label("Dashboard", systemImage: "square.grid.2x2.fill") }
+                .tag(0)
 
             ClientsListView(trainer: trainer, services: services)
                 .tabItem { Label("Clienti", systemImage: "person.2.fill") }
+                .tag(1)
 
             AppointmentsCalendarView(trainer: trainer, services: services)
                 .tabItem { Label("Agenda", systemImage: "calendar") }
+                .tag(2)
 
             TrainerMessagesView(trainer: trainer, services: services)
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right.fill") }
                 .badge("")
+                .tag(3)
 
             TrainerMenuView(trainer: trainer, services: services)
                 .tabItem { Label("", systemImage: "line.3.horizontal") }
+                .tag(4)
         }
         .tint(DesignSystem.Colors.indigo)
     }
@@ -35,12 +41,16 @@ struct TrainerDashboardView: View {
     @State private var showingCreateWorkout = false
     @State private var showingCreateNutrition = false
     @State private var showingAlerts = false
+    @State private var showingAddNote = false
+    @State private var editingNote: TrainerPersonalNote?
+    @Binding var selectedTab: Int
     let trainer: Trainer
     let services: AppServices
 
-    init(trainer: Trainer, services: AppServices) {
+    init(trainer: Trainer, services: AppServices, selectedTab: Binding<Int>) {
         self.trainer = trainer
         self.services = services
+        _selectedTab = selectedTab
         _viewModel = StateObject(wrappedValue: TrainerDashboardViewModel(trainer: trainer, services: services))
     }
 
@@ -49,7 +59,9 @@ struct TrainerDashboardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
-                    kpiGrid
+                    todayBanner
+
+                    notesPreview
 
                     SectionLabel(text: "Agenda di oggi")
                     todayAgenda
@@ -90,6 +102,16 @@ struct TrainerDashboardView: View {
             .sheet(isPresented: $showingAlerts) {
                 TrainerNotificationsSheet(insights: viewModel.insights)
                     .presentationDetents([.large])
+            }
+            .sheet(isPresented: $showingAddNote) {
+                AddTrainerNoteSheet(trainer: trainer, clients: clients) { note in
+                    Task { _ = await services.trainerNotesService.createNote(note); viewModel.load() }
+                }
+            }
+            .sheet(item: $editingNote) { note in
+                AddTrainerNoteSheet(note: note, trainer: trainer, clients: clients) { updated in
+                    Task { await services.trainerNotesService.updateNote(updated); viewModel.load() }
+                }
             }
             .appScreen()
             .task { reload() }
@@ -141,40 +163,106 @@ struct TrainerDashboardView: View {
         }
     }
 
-    private var kpiGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
-            DashboardStatCard(
-                icon: "person.2.fill",
-                value: "\(viewModel.clients.count)",
-                title: "Clienti attivi",
-                delta: "+\(viewModel.newClientsThisMonth)",
-                iconColor: DesignSystem.Colors.indigo,
-                iconBackground: DesignSystem.Colors.indigoBg
-            )
-            DashboardStatCard(
-                icon: "calendar.badge.clock",
-                value: "\(viewModel.appointmentsToday)",
-                title: "Sessioni oggi",
-                delta: nil,
-                iconColor: DesignSystem.Colors.amber,
-                iconBackground: DesignSystem.Colors.amberBg
-            )
-            DashboardStatCard(
-                icon: "list.clipboard.fill",
-                value: "\(viewModel.activePlans)",
-                title: "Schede attive",
-                delta: nil,
-                iconColor: DesignSystem.Colors.teal,
-                iconBackground: DesignSystem.Colors.tealBg
-            )
-            DashboardStatCard(
-                icon: "sparkles",
-                value: "\(viewModel.newClientsThisMonth)",
-                title: "Nuovi iscritti",
-                delta: "+\(viewModel.newClientsThisMonth)",
-                iconColor: DesignSystem.Colors.limeDark,
-                iconBackground: DesignSystem.Colors.limeBg
-            )
+    private var todayBanner: some View {
+        Button { selectedTab = 2 } label: {
+            FitCard {
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(viewModel.appointmentsToday > 0 ? DesignSystem.Colors.amberBg : DesignSystem.Colors.bgLine)
+                            .frame(width: 44, height: 44)
+                        Image(systemName: "calendar")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(viewModel.appointmentsToday > 0 ? DesignSystem.Colors.amber : DesignSystem.Colors.txtSecondary)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(viewModel.appointmentsToday == 0
+                             ? "Nessun appuntamento oggi"
+                             : "Hai \(viewModel.appointmentsToday) appuntament\(viewModel.appointmentsToday == 1 ? "o" : "i") oggi")
+                            .font(.custom("Archivo-ExtraBold", size: 15))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        if let next = viewModel.nextAppointmentToday {
+                            Text("Prossimo alle \(next.startTime.formattedTime())")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                    }
+                    Spacer()
+                    HStack(spacing: 4) {
+                        Text("Vedi agenda")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.indigo)
+                        Image(systemName: "chevron.right")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(DesignSystem.Colors.indigo)
+                    }
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var notesPreview: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionLabel(text: "Note personali")
+                Spacer()
+                NavigationLink {
+                    TrainerPersonalNotesListView(trainer: trainer, services: services)
+                } label: {
+                    Text("Vedi tutte")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
+                .buttonStyle(.plain)
+            }
+            if viewModel.isLoadingNotes {
+                ProgressView().frame(maxWidth: .infinity)
+            } else if viewModel.dashboardNotes.isEmpty {
+                FitCard {
+                    HStack(spacing: 12) {
+                        Image(systemName: "note.text")
+                            .font(.system(size: 20))
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary.opacity(0.5))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Nessuna nota prioritaria")
+                                .font(.custom("Archivo-ExtraBold", size: 14))
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            Button { showingAddNote = true } label: {
+                                Text("Aggiungi una nota →")
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.indigo)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
+                }
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(viewModel.dashboardNotes) { note in
+                        DashboardNoteRow(note: note, clients: clients) {
+                            editingNote = note
+                        } onComplete: {
+                            Task { await services.trainerNotesService.completeNote(note); viewModel.load() }
+                        }
+                    }
+                }
+                Button { showingAddNote = true } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Nuova nota")
+                    }
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(DesignSystem.Colors.indigo)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(DesignSystem.Colors.indigoBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -339,6 +427,81 @@ private struct DashboardAgendaRow: View {
         case .nutrition: return DesignSystem.Colors.teal
         case .checkin: return DesignSystem.Colors.amber
         case .recovery: return DesignSystem.Colors.txtSecondary
+        }
+    }
+}
+
+private struct DashboardNoteRow: View {
+    let note: TrainerPersonalNote
+    let clients: [Client]
+    let onTap: () -> Void
+    let onComplete: () -> Void
+
+    var body: some View {
+        Button { onTap() } label: {
+            FitCard {
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .fill(noteColor)
+                        .frame(width: 4, height: 44)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            if note.source == .payment {
+                                Image(systemName: "creditcard.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(DesignSystem.Colors.amber)
+                            }
+                            Text(note.title)
+                                .font(.custom("Archivo-ExtraBold", size: 14))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                .lineLimit(1)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        if !note.body.isEmpty {
+                            Text(note.body)
+                                .font(DesignSystem.Typography.bodySM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                .lineLimit(1)
+                        }
+                        HStack(spacing: 6) {
+                            Text(note.priority.label)
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(noteColor)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(noteColor.opacity(0.1))
+                                .clipShape(Capsule())
+                            if let cid = note.relatedClientID,
+                               let firstName = clients.first(where: { $0.id == cid })?.firstName {
+                                Text(firstName)
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                            if let nd = note.noteDate {
+                                Text(nd.formattedDay())
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                        }
+                    }
+                    Button { onComplete() } label: {
+                        Image(systemName: "checkmark.circle")
+                            .font(.system(size: 20))
+                            .foregroundStyle(DesignSystem.Colors.limeDark.opacity(0.6))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var noteColor: Color {
+        switch note.priority {
+        case .low: return DesignSystem.Colors.txtSecondary
+        case .medium: return DesignSystem.Colors.indigo
+        case .high: return DesignSystem.Colors.amber
+        case .critical: return Color(hex: "E57373")
         }
     }
 }
@@ -526,6 +689,7 @@ struct ClientDetailView: View {
                     case .diet: dietTab
                     case .feedback: feedbackTab
                     case .progress: progressTab
+                    case .payments: paymentsTab
                     }
                 }
             }
@@ -685,6 +849,31 @@ struct ClientDetailView: View {
         }
     }
 
+    private var paymentsTab: some View {
+        NavigationLink {
+            TrainerClientPaymentsView(client: client, services: services)
+        } label: {
+            FitCard {
+                HStack(spacing: 14) {
+                    FitIconChip(systemName: "creditcard.fill", color: DesignSystem.Colors.indigo, background: DesignSystem.Colors.indigoBg, size: 36)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Pagamenti")
+                            .font(.custom("Archivo-ExtraBold", size: 15))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text("Gestisci piano e storico pagamenti")
+                            .font(DesignSystem.Typography.bodySM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
     private var progressTab: some View {
         NavigationLink {
             TrainerClientProgressView(
@@ -747,7 +936,7 @@ struct ClientDetailView: View {
     }
 
     private enum DetailTab: CaseIterable, Identifiable {
-        case schedule, diet, feedback, progress
+        case schedule, diet, feedback, progress, payments
         var id: Self { self }
         var title: String {
             switch self {
@@ -755,6 +944,7 @@ struct ClientDetailView: View {
             case .diet: return "Dieta"
             case .feedback: return "Feedback"
             case .progress: return "Progressi"
+            case .payments: return "Pagamenti"
             }
         }
     }
@@ -2967,6 +3157,505 @@ private struct SavedMealFoodSearchSheet: View {
             }
             .appScreen()
         }
+    }
+}
+
+// MARK: - Trainer: Note personali
+
+struct AddTrainerNoteSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var noteBody: String
+    @State private var priority: NotePriority
+    @State private var hasDate: Bool
+    @State private var noteDate: Date
+    private let originalNote: TrainerPersonalNote?
+    let trainer: Trainer
+    let clients: [Client]
+    let onSave: (TrainerPersonalNote) -> Void
+
+    init(trainer: Trainer, clients: [Client], onSave: @escaping (TrainerPersonalNote) -> Void) {
+        self.trainer = trainer; self.clients = clients; self.onSave = onSave
+        originalNote = nil
+        _title = State(initialValue: ""); _noteBody = State(initialValue: "")
+        _priority = State(initialValue: .medium); _hasDate = State(initialValue: false)
+        _noteDate = State(initialValue: Date())
+    }
+
+    init(note: TrainerPersonalNote, trainer: Trainer, clients: [Client], onSave: @escaping (TrainerPersonalNote) -> Void) {
+        self.trainer = trainer; self.clients = clients; self.onSave = onSave
+        originalNote = note
+        _title = State(initialValue: note.title); _noteBody = State(initialValue: note.body)
+        _priority = State(initialValue: note.priority)
+        _hasDate = State(initialValue: note.noteDate != nil)
+        _noteDate = State(initialValue: note.noteDate ?? Date())
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    FitInputField(label: "Titolo", text: $title)
+
+                    FitCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Note")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            TextEditor(text: $noteBody)
+                                .frame(minHeight: 80)
+                                .font(DesignSystem.Typography.bodyMD())
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        }
+                    }
+
+                    SectionLabel(text: "Priorità")
+                    HStack(spacing: 8) {
+                        ForEach(NotePriority.allCases) { p in
+                            Button { priority = p } label: {
+                                Text(p.label)
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(priority == p ? .white : DesignSystem.Colors.txtPrimary)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 8)
+                                    .background(priority == p ? notePriorityColor(p) : DesignSystem.Colors.bgCard)
+                                    .clipShape(Capsule())
+                                    .overlay(Capsule().stroke(priority == p ? notePriorityColor(p) : DesignSystem.Colors.bgLine, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    FitCard {
+                        VStack(spacing: 8) {
+                            Toggle("Data specifica", isOn: $hasDate)
+                                .tint(DesignSystem.Colors.indigo)
+                                .font(DesignSystem.Typography.labelMD())
+                            if hasDate {
+                                DatePicker("", selection: $noteDate, displayedComponents: .date)
+                                    .tint(DesignSystem.Colors.indigo)
+                                    .labelsHidden()
+                            }
+                        }
+                    }
+
+                    AccentButton(title: originalNote == nil ? "Crea nota" : "Salva modifiche", color: DesignSystem.Colors.indigo) {
+                        saveNote()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(20)
+            }
+            .navigationTitle(originalNote == nil ? "Nuova nota" : "Modifica nota")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla") { dismiss() }.foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+            .appScreen()
+        }
+    }
+
+    private func saveNote() {
+        let base = originalNote ?? TrainerPersonalNote(
+            id: UUID(), trainerID: trainer.id, title: "", body: "", noteDate: nil, noteTime: nil,
+            priority: .medium, status: .open, source: .manual,
+            relatedClientID: nil, relatedPaymentID: nil, createdAt: Date(), updatedAt: Date(), completedAt: nil
+        )
+        let updated = TrainerPersonalNote(
+            id: base.id, trainerID: trainer.id,
+            title: title.trimmingCharacters(in: .whitespaces),
+            body: noteBody,
+            noteDate: hasDate ? noteDate : nil, noteTime: base.noteTime,
+            priority: priority, status: base.status, source: base.source,
+            relatedClientID: base.relatedClientID, relatedPaymentID: base.relatedPaymentID,
+            createdAt: base.createdAt, updatedAt: Date(), completedAt: base.completedAt
+        )
+        onSave(updated)
+        dismiss()
+    }
+
+    private func notePriorityColor(_ p: NotePriority) -> Color {
+        switch p {
+        case .low: return DesignSystem.Colors.txtSecondary
+        case .medium: return DesignSystem.Colors.indigo
+        case .high: return DesignSystem.Colors.amber
+        case .critical: return Color(hex: "E57373")
+        }
+    }
+}
+
+struct TrainerPersonalNotesListView: View {
+    @StateObject private var viewModel: TrainerNotesViewModel
+    @State private var showingAdd = false
+    @State private var editingNote: TrainerPersonalNote?
+    @State private var clients: [Client] = []
+    let trainer: Trainer
+    let services: AppServices
+
+    init(trainer: Trainer, services: AppServices) {
+        self.trainer = trainer; self.services = services
+        _viewModel = StateObject(wrappedValue: TrainerNotesViewModel(trainer: trainer, service: services.trainerNotesService))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        priorityFilterPill(nil, "Tutte")
+                        priorityFilterPill(.critical, "Massima")
+                        priorityFilterPill(.high, "Alta")
+                        priorityFilterPill(.medium, "Media")
+                        priorityFilterPill(.low, "Bassa")
+                    }
+                    .padding(.vertical, 2)
+                }
+                FitCard {
+                    Toggle("Mostra completate", isOn: $viewModel.showCompleted)
+                        .tint(DesignSystem.Colors.indigo)
+                        .font(DesignSystem.Typography.labelMD())
+                }
+
+                if viewModel.filteredNotes.isEmpty {
+                    EmptyStateView(title: "Nessuna nota", message: "Crea note per tenere traccia di promemoria e attività.", icon: "note.text")
+                } else {
+                    LazyVStack(spacing: 8) {
+                        ForEach(viewModel.filteredNotes) { note in
+                            DashboardNoteRow(note: note, clients: clients) {
+                                editingNote = note
+                            } onComplete: {
+                                viewModel.complete(note)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("Note personali")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { showingAdd = true } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 38, height: 38)
+                        .background(DesignSystem.Colors.txtPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $showingAdd) {
+            AddTrainerNoteSheet(trainer: trainer, clients: clients) { note in viewModel.save(note) }
+        }
+        .sheet(item: $editingNote) { note in
+            AddTrainerNoteSheet(note: note, trainer: trainer, clients: clients) { updated in viewModel.save(updated) }
+        }
+        .appScreen()
+        .task {
+            viewModel.load()
+            clients = await services.clientService.fetchClients(for: trainer.id)
+        }
+    }
+
+    private func priorityFilterPill(_ priority: NotePriority?, _ label: String) -> some View {
+        Button { viewModel.filterPriority = priority } label: {
+            Text(label)
+                .font(DesignSystem.Typography.labelSM())
+                .foregroundStyle(viewModel.filterPriority == priority ? .white : DesignSystem.Colors.txtSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(viewModel.filterPriority == priority ? DesignSystem.Colors.txtPrimary : DesignSystem.Colors.bgCard)
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(viewModel.filterPriority == priority ? DesignSystem.Colors.txtPrimary : DesignSystem.Colors.bgLine, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Trainer: Pagamenti cliente
+
+struct TrainerClientPaymentsView: View {
+    @State private var paymentPlan: ClientPaymentPlan?
+    @State private var payments: [ClientPayment] = []
+    @State private var isLoading = false
+    @State private var showingCreatePlan = false
+    let client: Client
+    let services: AppServices
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if isLoading {
+                    ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+                } else if let plan = paymentPlan {
+                    trainerPlanCard(plan)
+
+                    if !payments.isEmpty {
+                        SectionLabel(text: "Storico pagamenti")
+                        LazyVStack(spacing: 10) {
+                            ForEach(payments) { payment in
+                                trainerPaymentRow(payment)
+                            }
+                        }
+                    } else {
+                        EmptyStateView(title: "Nessun pagamento", message: "I pagamenti verranno generati automaticamente.", icon: "creditcard")
+                    }
+                } else {
+                    FitCard {
+                        VStack(spacing: 12) {
+                            Image(systemName: "creditcard")
+                                .font(.system(size: 28))
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            Text("Nessun piano pagamenti")
+                                .font(.custom("Archivo-ExtraBold", size: 15))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            Text("Crea un piano per gestire i pagamenti di \(client.firstName).")
+                                .font(DesignSystem.Typography.bodySM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    }
+                    AccentButton(title: "Crea piano pagamenti", color: DesignSystem.Colors.indigo) {
+                        showingCreatePlan = true
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("\(client.firstName) · Pagamenti")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if paymentPlan != nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showingCreatePlan = true } label: {
+                        Image(systemName: "pencil").foregroundStyle(DesignSystem.Colors.indigo)
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingCreatePlan, onDismiss: { Task { await reload() } }) {
+            CreatePaymentPlanSheet(client: client, services: services, existing: paymentPlan)
+        }
+        .appScreen()
+        .task { await reload() }
+    }
+
+    private func trainerPlanCard(_ plan: ClientPaymentPlan) -> some View {
+        FitCard(border: DesignSystem.Colors.indigo, lineWidth: 2) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(format: "%.2f %@", plan.amount, plan.currency))
+                            .font(.custom("Archivo-Black", size: 22))
+                            .foregroundStyle(DesignSystem.Colors.indigo)
+                        Text(plan.frequency.label)
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    Spacer()
+                    Text(plan.status == .active ? "Attivo" : plan.status.rawValue.capitalized)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(plan.status == .active ? DesignSystem.Colors.limeDark : DesignSystem.Colors.txtSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(plan.status == .active ? DesignSystem.Colors.limeBg : DesignSystem.Colors.bgLine)
+                        .clipShape(Capsule())
+                }
+                Text("Da \(plan.startDate.formattedDay())")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                if !plan.notes.isEmpty {
+                    Text(plan.notes)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+        }
+    }
+
+    private func trainerPaymentRow(_ payment: ClientPayment) -> some View {
+        FitCard {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(trainerPaymentStatusColor(payment.status).opacity(0.12))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: trainerPaymentStatusIcon(payment.status))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(trainerPaymentStatusColor(payment.status))
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(payment.dueDate.formattedDay())
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(String(format: "%.2f %@", payment.amount, payment.currency))
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(payment.status.label)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(trainerPaymentStatusColor(payment.status))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(trainerPaymentStatusColor(payment.status).opacity(0.1))
+                        .clipShape(Capsule())
+                    if payment.status == .paidByClient {
+                        Button("Conferma") {
+                            Task { await services.trainerClientPaymentService.confirmPayment(payment); await reload() }
+                        }
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.teal)
+                    }
+                }
+            }
+        }
+    }
+
+    private func trainerPaymentStatusColor(_ status: PaymentStatus) -> Color {
+        switch status {
+        case .due: return DesignSystem.Colors.indigo
+        case .paidByClient: return DesignSystem.Colors.amber
+        case .confirmed: return DesignSystem.Colors.teal
+        case .overdue: return Color(hex: "E57373")
+        case .cancelled: return DesignSystem.Colors.txtSecondary
+        }
+    }
+
+    private func trainerPaymentStatusIcon(_ status: PaymentStatus) -> String {
+        switch status {
+        case .due: return "clock"
+        case .paidByClient: return "questionmark.circle"
+        case .confirmed: return "checkmark.circle.fill"
+        case .overdue: return "exclamationmark.circle.fill"
+        case .cancelled: return "xmark.circle"
+        }
+    }
+
+    private func reload() async {
+        isLoading = true
+        paymentPlan = await services.trainerClientPaymentService.fetchPaymentPlan(forClient: client.id)
+        payments = await services.trainerClientPaymentService.fetchPayments(forClient: client.id)
+        isLoading = false
+    }
+}
+
+struct CreatePaymentPlanSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var amount: Double
+    @State private var frequency: PaymentFrequency
+    @State private var startDate: Date
+    @State private var notes: String
+    let client: Client
+    let services: AppServices
+    let existing: ClientPaymentPlan?
+
+    init(client: Client, services: AppServices, existing: ClientPaymentPlan?) {
+        self.client = client; self.services = services; self.existing = existing
+        _amount = State(initialValue: existing?.amount ?? 100)
+        _frequency = State(initialValue: existing?.frequency ?? .monthly)
+        _startDate = State(initialValue: existing?.startDate ?? Date())
+        _notes = State(initialValue: existing?.notes ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    FitCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Importo (€)")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            HStack {
+                                TextField("0.00", value: $amount, format: .number)
+                                    .keyboardType(.decimalPad)
+                                    .font(.custom("Archivo-ExtraBold", size: 20))
+                                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                Text("EUR")
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                        }
+                    }
+
+                    SectionLabel(text: "Frequenza")
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(PaymentFrequency.allCases) { freq in
+                            Button { frequency = freq } label: {
+                                Text(freq.label)
+                                    .font(DesignSystem.Typography.labelMD())
+                                    .foregroundStyle(frequency == freq ? .white : DesignSystem.Colors.txtPrimary)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 42)
+                                    .background(frequency == freq ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgCard)
+                                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(frequency == freq ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgLine, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    FitCard {
+                        DatePicker("Data inizio", selection: $startDate, displayedComponents: .date)
+                            .tint(DesignSystem.Colors.indigo)
+                            .font(DesignSystem.Typography.labelMD())
+                    }
+
+                    FitCard {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Note (opzionale)")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            TextEditor(text: $notes)
+                                .frame(minHeight: 60)
+                                .font(DesignSystem.Typography.bodyMD())
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        }
+                    }
+
+                    AccentButton(title: existing == nil ? "Crea piano" : "Salva modifiche", color: DesignSystem.Colors.indigo) {
+                        Task { await savePlan() }
+                    }
+                    .disabled(amount <= 0)
+                }
+                .padding(20)
+            }
+            .navigationTitle(existing == nil ? "Nuovo piano pagamenti" : "Modifica piano")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla") { dismiss() }.foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+            .appScreen()
+        }
+    }
+
+    private func savePlan() async {
+        let plan = ClientPaymentPlan(
+            id: existing?.id ?? UUID(),
+            trainerID: client.trainerID,
+            clientID: client.id,
+            frequency: frequency,
+            amount: amount,
+            currency: "EUR",
+            startDate: startDate,
+            dueDay: existing?.dueDay,
+            notes: notes,
+            status: .active,
+            createdAt: existing?.createdAt ?? Date()
+        )
+        _ = await services.trainerClientPaymentService.createOrUpdatePaymentPlan(plan)
+        dismiss()
     }
 }
 

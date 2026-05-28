@@ -56,6 +56,7 @@ struct ClientDashboardView: View {
 
                     SectionLabel(text: "Dal tuo coach")
                     checkInCard
+                    paymentsCard
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 18)
@@ -235,6 +236,38 @@ struct ClientDashboardView: View {
             .padding(.vertical, 6)
             .background(DesignSystem.Colors.amberBg)
             .clipShape(Capsule())
+    }
+
+    private var paymentsCard: some View {
+        NavigationLink {
+            ClientPaymentsView(client: client, services: services)
+        } label: {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(DesignSystem.Colors.indigo)
+                    .frame(width: 9, height: 9)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Piano pagamenti")
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text("Visualizza e gestisci i tuoi pagamenti")
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(DesignSystem.Colors.indigo)
+            }
+            .padding(16)
+            .background(DesignSystem.Colors.indigoBg)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(DesignSystem.Colors.indigo.opacity(0.2), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var initials: String {

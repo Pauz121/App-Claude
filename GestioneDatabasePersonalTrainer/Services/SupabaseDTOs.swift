@@ -281,6 +281,56 @@ struct SavedMealFoodDTO: Codable {
     var fatPer100g: Double?
 }
 
+struct TrainerPersonalNoteDTO: Codable {
+    var id: UUID?
+    var trainerId: UUID
+    var title: String
+    var body: String?
+    var noteDate: String?
+    var noteTime: String?
+    var priority: String
+    var status: String
+    var source: String
+    var relatedClientId: UUID?
+    var relatedPaymentId: UUID?
+    var createdAt: String?
+    var updatedAt: String?
+    var completedAt: String?
+}
+
+struct ClientPaymentPlanDTO: Codable {
+    var id: UUID?
+    var trainerId: UUID
+    var clientId: UUID
+    var frequency: String
+    var amount: Double
+    var currency: String
+    var startDate: String
+    var dueDay: Int?
+    var notes: String?
+    var status: String
+    var createdAt: String?
+    var updatedAt: String?
+}
+
+struct ClientPaymentDTO: Codable {
+    var id: UUID?
+    var trainerId: UUID
+    var clientId: UUID
+    var paymentPlanId: UUID
+    var amount: Double
+    var currency: String
+    var periodStart: String?
+    var periodEnd: String?
+    var dueDate: String
+    var status: String
+    var paidByClientAt: String?
+    var trainerConfirmedAt: String?
+    var invoiceNoteCreatedAt: String?
+    var createdAt: String?
+    var updatedAt: String?
+}
+
 struct RPCTrainerInviteParams: Codable {
     let pTrainerId: UUID
     let pClientId: UUID
@@ -558,6 +608,116 @@ enum SupabaseMapper {
             currentCount: streak.currentCount,
             bestCount: streak.bestCount,
             lastCompletedAt: streak.lastCompletedAt.map(formatDate),
+            createdAt: nil,
+            updatedAt: nil
+        )
+    }
+
+    static func trainerPersonalNote(from dto: TrainerPersonalNoteDTO) -> TrainerPersonalNote {
+        TrainerPersonalNote(
+            id: dto.id ?? UUID(),
+            trainerID: dto.trainerId,
+            title: dto.title,
+            body: dto.body ?? "",
+            noteDate: parseDate(dto.noteDate),
+            noteTime: dto.noteTime,
+            priority: NotePriority(rawValue: dto.priority) ?? .medium,
+            status: NoteStatus(rawValue: dto.status) ?? .open,
+            source: NoteSource(rawValue: dto.source) ?? .manual,
+            relatedClientID: dto.relatedClientId,
+            relatedPaymentID: dto.relatedPaymentId,
+            createdAt: iso.date(from: dto.createdAt ?? "") ?? Date(),
+            updatedAt: iso.date(from: dto.updatedAt ?? "") ?? Date(),
+            completedAt: iso.date(from: dto.completedAt ?? "")
+        )
+    }
+
+    static func trainerPersonalNoteDTO(from note: TrainerPersonalNote) -> TrainerPersonalNoteDTO {
+        TrainerPersonalNoteDTO(
+            id: note.id,
+            trainerId: note.trainerID,
+            title: note.title,
+            body: note.body.isEmpty ? nil : note.body,
+            noteDate: note.noteDate.map(formatDate),
+            noteTime: note.noteTime,
+            priority: note.priority.rawValue,
+            status: note.status.rawValue,
+            source: note.source.rawValue,
+            relatedClientId: note.relatedClientID,
+            relatedPaymentId: note.relatedPaymentID,
+            createdAt: nil,
+            updatedAt: nil,
+            completedAt: note.completedAt.map { iso.string(from: $0) }
+        )
+    }
+
+    static func clientPaymentPlan(from dto: ClientPaymentPlanDTO) -> ClientPaymentPlan {
+        ClientPaymentPlan(
+            id: dto.id ?? UUID(),
+            trainerID: dto.trainerId,
+            clientID: dto.clientId,
+            frequency: PaymentFrequency(rawValue: dto.frequency) ?? .monthly,
+            amount: dto.amount,
+            currency: dto.currency,
+            startDate: parseDate(dto.startDate) ?? Date(),
+            dueDay: dto.dueDay,
+            notes: dto.notes ?? "",
+            status: PaymentPlanStatus(rawValue: dto.status) ?? .active,
+            createdAt: iso.date(from: dto.createdAt ?? "") ?? Date()
+        )
+    }
+
+    static func clientPaymentPlanDTO(from plan: ClientPaymentPlan) -> ClientPaymentPlanDTO {
+        ClientPaymentPlanDTO(
+            id: plan.id,
+            trainerId: plan.trainerID,
+            clientId: plan.clientID,
+            frequency: plan.frequency.rawValue,
+            amount: plan.amount,
+            currency: plan.currency,
+            startDate: formatDate(plan.startDate),
+            dueDay: plan.dueDay,
+            notes: plan.notes.isEmpty ? nil : plan.notes,
+            status: plan.status.rawValue,
+            createdAt: nil,
+            updatedAt: nil
+        )
+    }
+
+    static func clientPayment(from dto: ClientPaymentDTO) -> ClientPayment {
+        ClientPayment(
+            id: dto.id ?? UUID(),
+            trainerID: dto.trainerId,
+            clientID: dto.clientId,
+            paymentPlanID: dto.paymentPlanId,
+            amount: dto.amount,
+            currency: dto.currency,
+            periodStart: parseDate(dto.periodStart),
+            periodEnd: parseDate(dto.periodEnd),
+            dueDate: parseDate(dto.dueDate) ?? Date(),
+            status: PaymentStatus(rawValue: dto.status) ?? .due,
+            paidByClientAt: iso.date(from: dto.paidByClientAt ?? ""),
+            trainerConfirmedAt: iso.date(from: dto.trainerConfirmedAt ?? ""),
+            invoiceNoteCreatedAt: iso.date(from: dto.invoiceNoteCreatedAt ?? ""),
+            createdAt: iso.date(from: dto.createdAt ?? "") ?? Date()
+        )
+    }
+
+    static func clientPaymentDTO(from payment: ClientPayment) -> ClientPaymentDTO {
+        ClientPaymentDTO(
+            id: payment.id,
+            trainerId: payment.trainerID,
+            clientId: payment.clientID,
+            paymentPlanId: payment.paymentPlanID,
+            amount: payment.amount,
+            currency: payment.currency,
+            periodStart: payment.periodStart.map(formatDate),
+            periodEnd: payment.periodEnd.map(formatDate),
+            dueDate: formatDate(payment.dueDate),
+            status: payment.status.rawValue,
+            paidByClientAt: payment.paidByClientAt.map { iso.string(from: $0) },
+            trainerConfirmedAt: payment.trainerConfirmedAt.map { iso.string(from: $0) },
+            invoiceNoteCreatedAt: payment.invoiceNoteCreatedAt.map { iso.string(from: $0) },
             createdAt: nil,
             updatedAt: nil
         )

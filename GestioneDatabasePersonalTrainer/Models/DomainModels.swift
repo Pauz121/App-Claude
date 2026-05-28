@@ -376,6 +376,147 @@ struct AccessCode: Identifiable, Codable, Hashable {
     var isActive: Bool
 }
 
+// MARK: - Trainer Personal Notes
+
+enum NotePriority: String, Codable, CaseIterable, Identifiable {
+    case low = "low"
+    case medium = "medium"
+    case high = "high"
+    case critical = "critical"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .low: return "Bassa"
+        case .medium: return "Media"
+        case .high: return "Alta"
+        case .critical: return "Massima"
+        }
+    }
+    var sortOrder: Int {
+        switch self { case .low: return 0; case .medium: return 1; case .high: return 2; case .critical: return 3 }
+    }
+}
+
+enum NoteStatus: String, Codable, CaseIterable, Identifiable {
+    case open = "open"
+    case completed = "completed"
+    case archived = "archived"
+    var id: String { rawValue }
+    var label: String {
+        switch self { case .open: return "Aperta"; case .completed: return "Completata"; case .archived: return "Archiviata" }
+    }
+}
+
+enum NoteSource: String, Codable, CaseIterable, Identifiable {
+    case manual = "manual"
+    case payment = "payment"
+    case system = "system"
+    var id: String { rawValue }
+}
+
+struct TrainerPersonalNote: Identifiable, Codable, Hashable {
+    var id: UUID
+    var trainerID: UUID
+    var title: String
+    var body: String
+    var noteDate: Date?
+    var noteTime: String?
+    var priority: NotePriority
+    var status: NoteStatus
+    var source: NoteSource
+    var relatedClientID: UUID?
+    var relatedPaymentID: UUID?
+    var createdAt: Date
+    var updatedAt: Date
+    var completedAt: Date?
+
+    var isCompleted: Bool { status == .completed }
+    var isForToday: Bool {
+        guard let d = noteDate else { return false }
+        return Calendar.current.isDateInToday(d)
+    }
+    var isHighPriority: Bool { priority == .high || priority == .critical }
+}
+
+// MARK: - Client Payments
+
+enum PaymentFrequency: String, Codable, CaseIterable, Identifiable {
+    case monthly = "monthly"
+    case bimonthly = "bimonthly"
+    case quarterly = "quarterly"
+    case semiannual = "semiannual"
+    case annual = "annual"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .monthly: return "Mensile"
+        case .bimonthly: return "Bimestrale"
+        case .quarterly: return "Trimestrale"
+        case .semiannual: return "Semestrale"
+        case .annual: return "Annuale"
+        }
+    }
+    var months: Int {
+        switch self { case .monthly: return 1; case .bimonthly: return 2; case .quarterly: return 3; case .semiannual: return 6; case .annual: return 12 }
+    }
+}
+
+enum PaymentPlanStatus: String, Codable, CaseIterable, Identifiable {
+    case active = "active"
+    case paused = "paused"
+    case cancelled = "cancelled"
+    var id: String { rawValue }
+}
+
+struct ClientPaymentPlan: Identifiable, Codable, Hashable {
+    var id: UUID
+    var trainerID: UUID
+    var clientID: UUID
+    var frequency: PaymentFrequency
+    var amount: Double
+    var currency: String
+    var startDate: Date
+    var dueDay: Int?
+    var notes: String
+    var status: PaymentPlanStatus
+    var createdAt: Date
+}
+
+enum PaymentStatus: String, Codable, CaseIterable, Identifiable {
+    case due = "due"
+    case paidByClient = "paid_by_client"
+    case confirmed = "confirmed"
+    case overdue = "overdue"
+    case cancelled = "cancelled"
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .due: return "Da pagare"
+        case .paidByClient: return "Segnato come pagato"
+        case .confirmed: return "Confermato"
+        case .overdue: return "Scaduto"
+        case .cancelled: return "Annullato"
+        }
+    }
+}
+
+struct ClientPayment: Identifiable, Codable, Hashable {
+    var id: UUID
+    var trainerID: UUID
+    var clientID: UUID
+    var paymentPlanID: UUID
+    var amount: Double
+    var currency: String
+    var periodStart: Date?
+    var periodEnd: Date?
+    var dueDate: Date
+    var status: PaymentStatus
+    var paidByClientAt: Date?
+    var trainerConfirmedAt: Date?
+    var invoiceNoteCreatedAt: Date?
+    var createdAt: Date
+}
+
 extension SessionType {
     var displayName: String {
         switch self {

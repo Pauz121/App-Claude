@@ -47,6 +47,9 @@ final class AppServices: ObservableObject {
     let streakService: StreakService
     let trainerInsightsService: TrainerInsightsService
     let savedMealService: SavedMealService
+    let trainerNotesService: TrainerNotesService
+    let clientPaymentService: ClientPaymentService
+    let trainerClientPaymentService: TrainerClientPaymentService
 
     init(database: MockDatabase = .shared, supabase: SupabaseManager = .shared) {
         self.database = database
@@ -74,6 +77,9 @@ final class AppServices: ObservableObject {
             streakService: streakService
         )
         savedMealService = SavedMealService(database: database, supabase: supabase)
+        trainerNotesService = TrainerNotesService(supabase: supabase)
+        clientPaymentService = ClientPaymentService(supabase: supabase)
+        trainerClientPaymentService = TrainerClientPaymentService(supabase: supabase)
     }
 }
 
@@ -817,5 +823,195 @@ final class SavedMealService {
             return
         }
         try? await supabase.delete("saved_meals", filters: [URLQueryItem(name: "id", value: "eq.\(meal.id.uuidString)")])
+    }
+}
+
+// MARK: - TrainerNotesService
+
+@MainActor
+final class TrainerNotesService {
+    private let supabase: SupabaseManager
+
+    init(supabase: SupabaseManager) { self.supabase = supabase }
+
+    func fetchNotes(for trainerID: UUID) async -> [TrainerPersonalNote] {
+        guard AppConfiguration.isSupabaseConfigured else { return [] }
+        let rows: [TrainerPersonalNoteDTO] = (try? await supabase.select("trainer_personal_notes", queryItems: [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "trainer_id", value: "eq.\(trainerID.uuidString)"),
+            URLQueryItem(name: "status", value: "neq.archived"),
+            URLQueryItem(name: "order", value: "created_at.desc")
+        ])) ?? []
+        return rows.map(SupabaseMapper.trainerPersonalNote)
+    }
+
+    func fetchDashboardNotes(for trainerID: UUID) async -> [TrainerPersonalNote] {
+        let all = await fetchNotes(for: trainerID)
+        let filtered = all.filter { note in
+            guard !note.isCompleted else { return false }
+            if note.isHighPriority { return true }
+            if note.isForToday { return true }
+            if note.noteDate == nil && note.source == .payment { return true }
+            return false
+        }
+        let sorted = filtered.sorted { a, b in
+            if a.priority.sortOrder != b.priority.sortOrder { return a.priority.sortOrder > b.priority.sortOrder }
+            return a.createdAt > b.createdAt
+        }
+        return Array(sorted.prefix(5))
+    }
+
+    func createNote(_ note: TrainerPersonalNote) async -> TrainerPersonalNote {
+        guard AppConfiguration.isSupabaseConfigured else { return note }
+        let rows: [TrainerPersonalNoteDTO] = (try? await supabase.insert("trainer_personal_notes", value: SupabaseMapper.trainerPersonalNoteDTO(from: note))) ?? []
+        return rows.first.map(SupabaseMapper.trainerPersonalNote) ?? note
+    }
+
+    func updateNote(_ note: TrainerPersonalNote) async {
+        guard AppConfiguration.isSupabaseConfigured else { return }
+        let _: [TrainerPersonalNoteDTO]? = try? await supabase.update("trainer_personal_notes", filters: [
+            URLQueryItem(name: "id", value: "eq.\(note.id.uuidString)")
+        ], value: SupabaseMapper.trainerPersonalNoteDTO(from: note))
+    }
+
+    func completeNote(_ note: TrainerPersonalNote) async {
+        var n = note
+        n.status = .completed
+        n.completedAt = Date()
+        await updateNote(n)
+    }
+
+    func deleteNote(_ note: TrainerPersonalNote) async {
+        guard AppConfiguration.isSupabaseConfigured else { return }
+        try? await supabase.delete("trainer_personal_notes", filters: [URLQueryItem(name: "id", value: "eq.\(note.id.uuidString)")])
+    }
+}
+
+// MARK: - ClientPaymentService (client-side)
+
+@MainActor
+final class ClientPaymentService {
+    private let supabase: SupabaseManager
+
+    init(supabase: SupabaseManager) { self.supabase = supabase }
+
+    func fetchPayments(forClient clientID: UUID) async -> [ClientPayment] {
+        guard AppConfiguration.isSupabaseConfigured else { return [] }
+        let rows: [ClientPaymentDTO] = (try? await supabase.select("client_payments", queryItems: [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "client_id", value: "eq.\(clientID.uuidString)"),
+            URLQueryItem(name: "order", value: "due_date.asc")
+        ])) ?? []
+        return rows.map(SupabaseMapper.clientPayment)
+    }
+
+    func fetchPaymentPlan(forClient clientID: UUID) async -> ClientPaymentPlan? {
+        guard AppConfiguration.isSupabaseConfigured else { return nil }
+        let rows: [ClientPaymentPlanDTO] = (try? await supabase.select("client_payment_plans", queryItems: [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "client_id", value: "eq.\(clientID.uuidString)"),
+            URLQueryItem(name: "status", value: "eq.active"),
+            URLQueryItem(name: "limit", value: "1")
+        ])) ?? []
+        return rows.first.map(SupabaseMapper.clientPaymentPlan)
+    }
+
+    func markPaymentAsPaidByClient(_ payment: ClientPayment) async -> ClientPayment {
+        guard AppConfiguration.isSupabaseConfigured else { return payment }
+        var updated = payment
+        updated.status = .paidByClient
+        updated.paidByClientAt = Date()
+        let rows: [ClientPaymentDTO] = (try? await supabase.update("client_payments", filters: [
+            URLQueryItem(name: "id", value: "eq.\(payment.id.uuidString)")
+        ], value: SupabaseMapper.clientPaymentDTO(from: updated))) ?? []
+        return rows.first.map(SupabaseMapper.clientPayment) ?? updated
+    }
+}
+
+// MARK: - TrainerClientPaymentService (trainer-side)
+
+@MainActor
+final class TrainerClientPaymentService {
+    private let supabase: SupabaseManager
+
+    init(supabase: SupabaseManager) { self.supabase = supabase }
+
+    func fetchPaymentPlan(forClient clientID: UUID) async -> ClientPaymentPlan? {
+        guard AppConfiguration.isSupabaseConfigured else { return nil }
+        let rows: [ClientPaymentPlanDTO] = (try? await supabase.select("client_payment_plans", queryItems: [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "client_id", value: "eq.\(clientID.uuidString)"),
+            URLQueryItem(name: "status", value: "eq.active"),
+            URLQueryItem(name: "limit", value: "1")
+        ])) ?? []
+        return rows.first.map(SupabaseMapper.clientPaymentPlan)
+    }
+
+    func fetchPayments(forClient clientID: UUID) async -> [ClientPayment] {
+        guard AppConfiguration.isSupabaseConfigured else { return [] }
+        let rows: [ClientPaymentDTO] = (try? await supabase.select("client_payments", queryItems: [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "client_id", value: "eq.\(clientID.uuidString)"),
+            URLQueryItem(name: "order", value: "due_date.desc")
+        ])) ?? []
+        return rows.map(SupabaseMapper.clientPayment)
+    }
+
+    func createOrUpdatePaymentPlan(_ plan: ClientPaymentPlan) async -> ClientPaymentPlan {
+        guard AppConfiguration.isSupabaseConfigured else { return plan }
+        let existing = await fetchPaymentPlan(forClient: plan.clientID)
+        if let ex = existing {
+            var updated = plan
+            updated.id = ex.id
+            let rows: [ClientPaymentPlanDTO] = (try? await supabase.update("client_payment_plans", filters: [
+                URLQueryItem(name: "id", value: "eq.\(ex.id.uuidString)")
+            ], value: SupabaseMapper.clientPaymentPlanDTO(from: updated))) ?? []
+            return rows.first.map(SupabaseMapper.clientPaymentPlan) ?? updated
+        } else {
+            let rows: [ClientPaymentPlanDTO] = (try? await supabase.insert("client_payment_plans", value: SupabaseMapper.clientPaymentPlanDTO(from: plan))) ?? []
+            let saved = rows.first.map(SupabaseMapper.clientPaymentPlan) ?? plan
+            await generateUpcomingPayments(for: saved)
+            return saved
+        }
+    }
+
+    func generateUpcomingPayments(for plan: ClientPaymentPlan) async {
+        guard AppConfiguration.isSupabaseConfigured else { return }
+        let existing = await fetchPayments(forClient: plan.clientID)
+        let future = existing.filter { $0.dueDate >= Calendar.current.startOfDay(for: Date()) && $0.status != .cancelled }
+        guard future.isEmpty else { return }
+
+        var base = plan.startDate
+        let today = Calendar.current.startOfDay(for: Date())
+        while base < today {
+            base = Calendar.current.date(byAdding: .month, value: plan.frequency.months, to: base) ?? base
+        }
+
+        for i in 0..<3 {
+            guard let dueDate = Calendar.current.date(byAdding: .month, value: plan.frequency.months * i, to: base) else { continue }
+            let periodEnd = Calendar.current.date(byAdding: .day, value: -1, to: dueDate) ?? dueDate
+            let periodStart = Calendar.current.date(byAdding: .month, value: -plan.frequency.months, to: dueDate) ?? dueDate
+            let dto = ClientPaymentDTO(
+                id: nil, trainerId: plan.trainerID, clientId: plan.clientID,
+                paymentPlanId: plan.id, amount: plan.amount, currency: plan.currency,
+                periodStart: SupabaseMapper.formatDate(periodStart),
+                periodEnd: SupabaseMapper.formatDate(periodEnd),
+                dueDate: SupabaseMapper.formatDate(dueDate),
+                status: "due", paidByClientAt: nil,
+                trainerConfirmedAt: nil, invoiceNoteCreatedAt: nil,
+                createdAt: nil, updatedAt: nil
+            )
+            let _: [ClientPaymentDTO]? = try? await supabase.insert("client_payments", value: dto)
+        }
+    }
+
+    func confirmPayment(_ payment: ClientPayment) async {
+        guard AppConfiguration.isSupabaseConfigured else { return }
+        var updated = payment
+        updated.status = .confirmed
+        updated.trainerConfirmedAt = Date()
+        let _: [ClientPaymentDTO]? = try? await supabase.update("client_payments", filters: [
+            URLQueryItem(name: "id", value: "eq.\(payment.id.uuidString)")
+        ], value: SupabaseMapper.clientPaymentDTO(from: updated))
     }
 }

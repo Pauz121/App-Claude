@@ -333,3 +333,52 @@ final class ClientProgressViewModel: ObservableObject {
         }
     }
 }
+
+// MARK: - ClientPaymentsViewModel
+
+@MainActor
+final class ClientPaymentsViewModel: ObservableObject {
+    @Published var payments: [ClientPayment] = []
+    @Published var paymentPlan: ClientPaymentPlan?
+    @Published var isLoading = false
+    @Published var showingPaidConfirmation = false
+
+    private let client: Client
+    private let service: ClientPaymentService
+
+    init(client: Client, service: ClientPaymentService) {
+        self.client = client
+        self.service = service
+    }
+
+    var duePayments: [ClientPayment] {
+        payments
+            .filter { $0.status == .due || $0.status == .overdue }
+            .sorted { $0.dueDate < $1.dueDate }
+    }
+
+    var historyPayments: [ClientPayment] {
+        payments
+            .filter { $0.status == .paidByClient || $0.status == .confirmed }
+            .sorted { $0.dueDate > $1.dueDate }
+    }
+
+    func load() {
+        Task<Void, Never>(priority: nil) {
+            isLoading = true
+            payments = await service.fetchPayments(forClient: client.id)
+            paymentPlan = await service.fetchPaymentPlan(forClient: client.id)
+            isLoading = false
+        }
+    }
+
+    func markAsPaid(_ payment: ClientPayment) {
+        Task<Void, Never>(priority: nil) {
+            let updated = await service.markPaymentAsPaidByClient(payment)
+            if let idx = payments.firstIndex(where: { $0.id == updated.id }) {
+                payments[idx] = updated
+            }
+            showingPaidConfirmation = true
+        }
+    }
+}

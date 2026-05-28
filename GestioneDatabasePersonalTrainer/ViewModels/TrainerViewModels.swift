@@ -9,6 +9,8 @@ final class TrainerDashboardViewModel: ObservableObject {
     @Published var progressEntries: [ProgressEntry] = []
     @Published var insights: [TrainerClientInsight] = []
     @Published var isLoadingInsights = false
+    @Published var dashboardNotes: [TrainerPersonalNote] = []
+    @Published var isLoadingNotes = false
 
     private let trainer: Trainer
     private let services: AppServices
@@ -25,12 +27,15 @@ final class TrainerDashboardViewModel: ObservableObject {
             workoutPlans = await services.workoutService.fetchWorkoutPlans(for: trainer.id)
             progressEntries = services.database.progressEntries
             isLoadingInsights = true
+            isLoadingNotes = true
             insights = await services.trainerInsightsService.fetchClientsNeedingAttention(
                 trainerID: trainer.id,
                 clients: clients,
                 progressEntries: progressEntries
             )
             isLoadingInsights = false
+            dashboardNotes = await services.trainerNotesService.fetchDashboardNotes(for: trainer.id)
+            isLoadingNotes = false
         }
     }
 
@@ -59,6 +64,60 @@ final class TrainerDashboardViewModel: ObservableObject {
 
     var activePlans: Int {
         workoutPlans.filter { $0.status == .active }.count
+    }
+
+    var nextAppointmentToday: Appointment? {
+        appointmentsForToday.first { $0.startTime >= Date() }
+    }
+}
+
+// MARK: - TrainerNotesViewModel
+
+@MainActor
+final class TrainerNotesViewModel: ObservableObject {
+    @Published var notes: [TrainerPersonalNote] = []
+    @Published var filterPriority: NotePriority? = nil
+    @Published var showCompleted = false
+
+    private let trainer: Trainer
+    private let service: TrainerNotesService
+
+    init(trainer: Trainer, service: TrainerNotesService) {
+        self.trainer = trainer
+        self.service = service
+    }
+
+    var filteredNotes: [TrainerPersonalNote] {
+        var result = notes
+        if !showCompleted { result = result.filter { !$0.isCompleted } }
+        if let p = filterPriority { result = result.filter { $0.priority == p } }
+        return result.sorted { a, b in
+            if a.priority.sortOrder != b.priority.sortOrder { return a.priority.sortOrder > b.priority.sortOrder }
+            return a.createdAt > b.createdAt
+        }
+    }
+
+    func load() {
+        Task<Void, Never>(priority: nil) { notes = await service.fetchNotes(for: trainer.id) }
+    }
+
+    func save(_ note: TrainerPersonalNote) {
+        Task<Void, Never>(priority: nil) {
+            if notes.contains(where: { $0.id == note.id }) {
+                await service.updateNote(note)
+            } else {
+                _ = await service.createNote(note)
+            }
+            load()
+        }
+    }
+
+    func complete(_ note: TrainerPersonalNote) {
+        Task<Void, Never>(priority: nil) { await service.completeNote(note); load() }
+    }
+
+    func delete(_ note: TrainerPersonalNote) {
+        Task<Void, Never>(priority: nil) { await service.deleteNote(note); load() }
     }
 }
 
