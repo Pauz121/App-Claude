@@ -283,6 +283,167 @@ struct ClientDashboardView: View {
     }
 }
 
+struct ClientPaymentsView: View {
+    @StateObject private var viewModel: ClientPaymentsViewModel
+    let client: Client
+    let services: AppServices
+
+    init(client: Client, services: AppServices) {
+        self.client = client
+        self.services = services
+        _viewModel = StateObject(wrappedValue: ClientPaymentsViewModel(client: client, service: services.clientPaymentService))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                if viewModel.isLoading {
+                    ProgressView()
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
+                } else {
+                    if let plan = viewModel.paymentPlan {
+                        paymentPlanCard(plan)
+                    } else {
+                        EmptyStateView(title: "Nessun piano pagamenti", message: "Il trainer non ha ancora configurato un piano pagamenti.", icon: "creditcard")
+                    }
+
+                    if !viewModel.duePayments.isEmpty {
+                        SectionLabel(text: "Da pagare")
+                        LazyVStack(spacing: 10) {
+                            ForEach(viewModel.duePayments) { payment in
+                                paymentRow(payment, allowsMarkAsPaid: true)
+                            }
+                        }
+                    }
+
+                    if !viewModel.historyPayments.isEmpty {
+                        SectionLabel(text: "Storico")
+                        LazyVStack(spacing: 10) {
+                            ForEach(viewModel.historyPayments) { payment in
+                                paymentRow(payment, allowsMarkAsPaid: false)
+                            }
+                        }
+                    }
+
+                    if viewModel.paymentPlan != nil && viewModel.payments.isEmpty {
+                        EmptyStateView(title: "Nessun pagamento", message: "I prossimi pagamenti appariranno qui.", icon: "calendar.badge.clock")
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("Pagamenti")
+        .navigationBarTitleDisplayMode(.inline)
+        .alert("Pagamento segnalato", isPresented: $viewModel.showingPaidConfirmation) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Il trainer dovra confermare il pagamento.")
+        }
+        .appScreen()
+        .task { viewModel.load() }
+    }
+
+    private func paymentPlanCard(_ plan: ClientPaymentPlan) -> some View {
+        FitCard(border: DesignSystem.Colors.indigo, lineWidth: 2) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(format: "%.2f %@", plan.amount, plan.currency))
+                            .font(.custom("Archivo-Black", size: 24))
+                            .foregroundStyle(DesignSystem.Colors.indigo)
+                        Text(plan.frequency.label)
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    Spacer()
+                    Text(plan.status == .active ? "Attivo" : plan.status.rawValue.capitalized)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(plan.status == .active ? DesignSystem.Colors.limeDark : DesignSystem.Colors.txtSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(plan.status == .active ? DesignSystem.Colors.limeBg : DesignSystem.Colors.bgLine)
+                        .clipShape(Capsule())
+                }
+
+                Text("Da \(plan.startDate.formattedDay())")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+
+                if !plan.notes.isEmpty {
+                    Text(plan.notes)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+        }
+    }
+
+    private func paymentRow(_ payment: ClientPayment, allowsMarkAsPaid: Bool) -> some View {
+        FitCard {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(paymentStatusColor(payment.status).opacity(0.12))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: paymentStatusIcon(payment.status))
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(paymentStatusColor(payment.status))
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(payment.dueDate.formattedDay())
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(String(format: "%.2f %@", payment.amount, payment.currency))
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text(payment.status.label)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(paymentStatusColor(payment.status))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(paymentStatusColor(payment.status).opacity(0.1))
+                        .clipShape(Capsule())
+
+                    if allowsMarkAsPaid {
+                        Button("Segna pagato") {
+                            viewModel.markAsPaid(payment)
+                        }
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                    }
+                }
+            }
+        }
+    }
+
+    private func paymentStatusColor(_ status: PaymentStatus) -> Color {
+        switch status {
+        case .due: return DesignSystem.Colors.indigo
+        case .paidByClient: return DesignSystem.Colors.amber
+        case .confirmed: return DesignSystem.Colors.teal
+        case .overdue: return Color(hex: "E57373")
+        case .cancelled: return DesignSystem.Colors.txtSecondary
+        }
+    }
+
+    private func paymentStatusIcon(_ status: PaymentStatus) -> String {
+        switch status {
+        case .due: return "clock"
+        case .paidByClient: return "questionmark.circle"
+        case .confirmed: return "checkmark.circle.fill"
+        case .overdue: return "exclamationmark.circle.fill"
+        case .cancelled: return "xmark.circle"
+        }
+    }
+}
+
 struct ClientWorkoutView: View {
     @StateObject private var viewModel: ClientWorkoutViewModel
     @State private var expandedWeek: Int? = 1

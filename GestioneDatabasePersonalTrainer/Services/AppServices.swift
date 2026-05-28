@@ -51,7 +51,11 @@ final class AppServices: ObservableObject {
     let clientPaymentService: ClientPaymentService
     let trainerClientPaymentService: TrainerClientPaymentService
 
-    init(database: MockDatabase = .shared, supabase: SupabaseManager = .shared) {
+    init() {
+        self.init(database: MockDatabase.shared, supabase: SupabaseManager.shared)
+    }
+
+    init(database: MockDatabase, supabase: SupabaseManager) {
         self.database = database
         self.supabase = supabase
         trainerService = TrainerService(database: database, supabase: supabase)
