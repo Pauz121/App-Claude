@@ -59,12 +59,10 @@ struct TrainerDashboardView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
                     header
-                    todayBanner
-
                     notesPreview
 
                     SectionLabel(text: "Agenda di oggi")
-                    todayAgenda
+                    todayAgendaWithBanner
 
                     SectionLabel(text: "Azioni rapide")
                     quickActions
@@ -272,6 +270,92 @@ struct TrainerDashboardView: View {
             QuickActionCard(icon: "dumbbell.fill", title: "Nuova scheda", subtitle: "Crea piano allenamento", color: DesignSystem.Colors.teal, colorBackground: DesignSystem.Colors.tealBg, action: { showingCreateWorkout = true })
             QuickActionCard(icon: "fork.knife", title: "Nuovo piano", subtitle: "Crea piano alimentare", color: DesignSystem.Colors.amber, colorBackground: DesignSystem.Colors.amberBg, action: { showingCreateNutrition = true })
             QuickActionCard(icon: "calendar.badge.plus", title: "Appuntamento", subtitle: "Pianifica una sessione", color: DesignSystem.Colors.limeDark, colorBackground: DesignSystem.Colors.limeBg, action: { showingAddAppointment = true })
+        }
+    }
+
+    private var todayAgendaWithBanner: some View {
+        FitCard {
+            VStack(spacing: 0) {
+                Button { selectedTab = 2 } label: {
+                    HStack(spacing: 12) {
+                        ZStack {
+                            Circle()
+                                .fill(viewModel.appointmentsToday > 0 ? DesignSystem.Colors.amberBg : DesignSystem.Colors.bgLine)
+                                .frame(width: 36, height: 36)
+                            Image(systemName: "calendar")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(viewModel.appointmentsToday > 0 ? DesignSystem.Colors.amber : DesignSystem.Colors.txtSecondary)
+                        }
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(viewModel.appointmentsToday == 0
+                                 ? "Nessun appuntamento oggi"
+                                 : "Hai \(viewModel.appointmentsToday) appuntament\(viewModel.appointmentsToday == 1 ? "o" : "i") oggi")
+                                .font(.custom("Archivo-ExtraBold", size: 14))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            if let next = viewModel.nextAppointmentToday {
+                                Text("Prossimo alle \(next.startTime.formattedTime())")
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                        }
+                        Spacer()
+                        HStack(spacing: 3) {
+                            Text("Agenda")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.indigo)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(DesignSystem.Colors.indigo)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if viewModel.appointmentsForToday.isEmpty {
+                    HStack(spacing: 14) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 22, weight: .regular))
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary.opacity(0.5))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Nessun appuntamento oggi")
+                                .font(.custom("Archivo-ExtraBold", size: 14))
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            Button { showingAddAppointment = true } label: {
+                                Text("Aggiungi appuntamento →")
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.indigo)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                    .padding(.top, 12)
+                } else {
+                    Divider()
+                        .background(DesignSystem.Colors.bgLine)
+                        .padding(.top, 12)
+                    VStack(spacing: 0) {
+                        ForEach(Array(viewModel.appointmentsForToday.enumerated()), id: \.element.id) { index, appt in
+                            DashboardAgendaRow(appointment: appt, clientName: viewModel.clientName(for: appt))
+                            if index < viewModel.appointmentsForToday.count - 1 {
+                                Divider().background(DesignSystem.Colors.bgLine).padding(.leading, 68)
+                            }
+                        }
+                        NavigationLink {
+                            AppointmentsCalendarView(trainer: trainer, services: services)
+                        } label: {
+                            HStack {
+                                Spacer()
+                                Text("Vai all'agenda →")
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.indigo)
+                            }
+                            .padding(.top, 10)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
         }
     }
 

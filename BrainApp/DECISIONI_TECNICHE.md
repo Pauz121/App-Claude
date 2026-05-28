@@ -99,6 +99,29 @@ Decisioni operative:
 
 Alternative scartate: leggere calorie/distanza/battito/sonno; generare consigli sanitari automatici; salvare stream HealthKit dettagliati; introdurre un backend separato per gli insight.
 
+### Pagamento opzionale in AddClientView — firma onSave invariata
+
+Decisione: aggiungere piano pagamenti opzionale alla creazione cliente senza cambiare la firma `onSave: (Client) -> Void`.
+
+Motivazione: cambiare la firma richiederebbe aggiornare `ClientsViewModel`, `ClientDetailView` e tutti i caller. Il rischio di regressione è alto per un beneficio marginale (il piano è opzionale).
+
+Soluzione adottata:
+- `@EnvironmentObject private var services: AppServices` in `AddClientView`
+- `isNewClient: Bool` calcolato in `init()` da `client.firstName.isEmpty` — deve essere `let`, non computed, perché al salvataggio `firstName` è già valorizzato
+- `saveAndDismiss()` chiama `onSave(client)` poi, se `paymentEnabled`, avvia un `Task` con 800ms sleep prima di creare il piano
+- 800ms sleep mitiga la race condition FK: il client deve esistere in DB prima che il piano possa referenziarlo
+- `AppServices` è reference type (class), sicuro da usare in Task dopo `dismiss()`
+
+Alternative scartate: cambiare firma `onSave` (invasivo); usare callback onAppear (inaffidabile); zero delay (race condition FK).
+
+### Dashboard trainer — banner appuntamenti integrato
+
+Decisione: unire il banner "appuntamenti di oggi" con il blocco "Agenda di oggi" in una sola `FitCard`, invece di tenerli come due elementi separati.
+
+Motivazione: riduce il rumore visivo. Il banner diventa la riga header tappabile della card agenda, navigando al tab Agenda (`selectedTab = 2`).
+
+Alternative scartate: mantenere `todayBanner` standalone (troppo spazio); rimuovere il banner (perde l'accesso rapido al tab).
+
 ## Decisioni da prendere
 
 - Usare REST manuale o Supabase Swift SDK per query annidate e Storage avanzato.

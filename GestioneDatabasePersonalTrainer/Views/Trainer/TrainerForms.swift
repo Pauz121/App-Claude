@@ -8,22 +8,31 @@ import Charts
 
 struct AddClientView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var services: AppServices
     @State private var client: Client
     @State private var selectedObjective: String
+    @State private var codeCopied = false
+    @State private var paymentEnabled = false
+    @State private var paymentAmount: Double = 100
+    @State private var paymentFrequency: PaymentFrequency = .monthly
+    @State private var paymentStartDate: Date = Date()
+    @State private var paymentNotes: String = ""
     let onSave: (Client) -> Void
+    private let isNewClient: Bool
     private let objectives = ["Dimagrimento", "Massa", "Ricomposizione", "Tonificazione", "Forza", "Altro"]
 
     init(client: Client, onSave: @escaping (Client) -> Void) {
         _client = State(initialValue: client)
         _selectedObjective = State(initialValue: client.goal.isEmpty ? "Dimagrimento" : client.goal)
         self.onSave = onSave
+        self.isNewClient = client.firstName.isEmpty
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    Text(client.firstName.isEmpty ? "Nuovo cliente" : "Modifica cliente")
+                    Text(isNewClient ? "Nuovo cliente" : "Modifica cliente")
                         .font(DesignSystem.Typography.titleLG())
                         .foregroundStyle(DesignSystem.Colors.txtPrimary)
 
@@ -72,27 +81,43 @@ struct AddClientView: View {
                             .clipShape(Capsule())
                     } else {
                         FitCard {
-                            HStack {
-                                Text("Codice")
-                                    .font(DesignSystem.Typography.bodyMD())
-                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Codice accesso")
+                                        .font(DesignSystem.Typography.labelSM())
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                    Text(client.accessCode)
+                                        .font(.system(size: 17, weight: .semibold, design: .monospaced))
+                                        .foregroundStyle(DesignSystem.Colors.limeDark)
+                                }
                                 Spacer()
-                                Text(client.accessCode)
-                                    .font(.system(size: 15, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(DesignSystem.Colors.limeDark)
+                                Button {
+                                    UIPasteboard.general.string = client.accessCode
+                                    codeCopied = true
+                                    Task {
+                                        try? await Task.sleep(nanoseconds: 2_000_000_000)
+                                        codeCopied = false
+                                    }
+                                } label: {
+                                    Image(systemName: codeCopied ? "checkmark" : "doc.on.doc")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(codeCopied ? DesignSystem.Colors.limeDark : DesignSystem.Colors.indigo)
+                                        .frame(width: 36, height: 36)
+                                        .background(codeCopied ? DesignSystem.Colors.limeBg : DesignSystem.Colors.indigoBg)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                }
+                                .buttonStyle(.plain)
+                                .animation(.easeInOut(duration: 0.2), value: codeCopied)
                             }
                         }
                         Text("Il cliente userà questo codice per accedere alla sua app")
                             .font(DesignSystem.Typography.bodySM())
                             .italic()
                             .foregroundStyle(DesignSystem.Colors.txtSecondary)
-                        Button {
-                            UIPasteboard.general.string = client.accessCode
-                        } label: {
-                            Label("Copia codice", systemImage: "doc.on.doc")
-                                .font(DesignSystem.Typography.labelMD())
-                                .foregroundStyle(DesignSystem.Colors.indigo)
-                        }
+                    }
+
+                    if isNewClient {
+                        paymentSection
                     }
 
                     SectionLabel(text: "Note trainer")
@@ -103,10 +128,8 @@ struct AddClientView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(DesignSystem.Colors.bgLine, lineWidth: 1))
 
-                    PrimaryButton(title: client.firstName.isEmpty ? "Crea cliente & invia codice" : "Salva modifiche") {
-                        if client.goal.isEmpty { client.goal = selectedObjective }
-                        onSave(client)
-                        dismiss()
+                    PrimaryButton(title: isNewClient ? "Crea cliente & invia codice" : "Salva modifiche") {
+                        saveAndDismiss()
                     }
                     .disabled(client.firstName.isEmpty || client.lastName.isEmpty)
                 }
@@ -119,17 +142,102 @@ struct AddClientView: View {
                         .foregroundStyle(DesignSystem.Colors.txtSecondary)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Salva") {
-                        if client.goal.isEmpty { client.goal = selectedObjective }
-                        onSave(client)
-                        dismiss()
-                    }
-                    .foregroundStyle(DesignSystem.Colors.indigo)
-                    .disabled(client.firstName.isEmpty || client.lastName.isEmpty)
+                    Button("Salva") { saveAndDismiss() }
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                        .disabled(client.firstName.isEmpty || client.lastName.isEmpty)
                 }
             }
             .appScreen()
         }
+    }
+
+    private var paymentSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionLabel(text: "Pagamento")
+            FitCard {
+                Toggle("Imposta piano pagamenti", isOn: $paymentEnabled)
+                    .tint(DesignSystem.Colors.indigo)
+                    .font(DesignSystem.Typography.labelMD())
+            }
+            if paymentEnabled {
+                FitCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Importo (€)")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        HStack {
+                            TextField("0", value: $paymentAmount, format: .number)
+                                .keyboardType(.decimalPad)
+                                .font(.custom("Archivo-ExtraBold", size: 20))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            Text("EUR")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                    }
+                }
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(PaymentFrequency.allCases) { freq in
+                        Button { paymentFrequency = freq } label: {
+                            Text(freq.label)
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(paymentFrequency == freq ? .white : DesignSystem.Colors.txtPrimary)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 38)
+                                .background(paymentFrequency == freq ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgCard)
+                                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(paymentFrequency == freq ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgLine, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                FitCard {
+                    DatePicker("Data inizio", selection: $paymentStartDate, displayedComponents: .date)
+                        .tint(DesignSystem.Colors.indigo)
+                        .font(DesignSystem.Typography.labelMD())
+                }
+
+                FitCard {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Note pagamento (opzionale)")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        TextEditor(text: $paymentNotes)
+                            .frame(minHeight: 60)
+                            .font(DesignSystem.Typography.bodyMD())
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    }
+                }
+            }
+        }
+    }
+
+    private func saveAndDismiss() {
+        if client.goal.isEmpty { client.goal = selectedObjective }
+        onSave(client)
+        if isNewClient && paymentEnabled && paymentAmount > 0 {
+            let svc = services.trainerClientPaymentService
+            let plan = ClientPaymentPlan(
+                id: UUID(),
+                trainerID: client.trainerID,
+                clientID: client.id,
+                frequency: paymentFrequency,
+                amount: paymentAmount,
+                currency: "EUR",
+                startDate: paymentStartDate,
+                dueDay: nil,
+                notes: paymentNotes,
+                status: .active,
+                createdAt: Date()
+            )
+            Task {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                _ = await svc.createOrUpdatePaymentPlan(plan)
+            }
+        }
+        dismiss()
     }
 
     private func field(_ title: String, text: Binding<String>, keyboard: UIKeyboardType = .default) -> some View {

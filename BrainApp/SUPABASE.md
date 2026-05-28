@@ -1,6 +1,6 @@
 # Supabase
 
-Data aggiornamento: 2026-05-17
+Data aggiornamento: 2026-05-29
 
 ## Configurazione
 
@@ -42,6 +42,8 @@ Placeholder ammessi:
 - `progress_entries`: misure progressi.
 - `progress_photos`: metadata foto.
 - `app_audit_logs`: audit.
+- `client_payment_plans`: piano pagamenti amministrativo per cliente (frequenza, importo, data inizio).
+- `client_payments`: singoli pagamenti generati dal piano (scadenza, stato, importo).
 
 ## Tabelle catalogo
 
@@ -102,6 +104,7 @@ Da completare nell'app:
 | `20260528120000_meals_day_of_week.sql` | 2026-05-28 | Colonna `day_of_week integer` su `meals` + indice composite |
 | `20260528140000_exercise_progress_entries.sql` | 2026-05-28 | Tabella `exercise_progress_entries` con `exercise_name`, RLS completa |
 | `20260528150000_saved_meals_foods.sql` | 2026-05-28 | Tabelle `saved_meals` + `saved_meal_foods`, RLS trainer-owned, cascade delete |
+| *(da creare se assente)* | 2026-05-29 | Tabelle `client_payment_plans` + `client_payments`, RLS trainer-owned, trigger `auto_create_fattura_note` |
 
 ### meals.day_of_week
 
@@ -114,6 +117,35 @@ create index if not exists idx_meals_plan_day
 
 Semantica: `1=Lunedì … 7=Domenica`. `NULL` = piano senza raggruppamento settimanale.
 Utilizzata dal wizard "Crea nuova dieta" per associare ogni pasto al giorno della settimana.
+
+### client_payment_plans + client_payments
+
+Tabelle per la gestione pagamenti amministrativi (non transazioni reali).
+
+`client_payment_plans`:
+- `id uuid PK`, `trainer_id uuid FK trainers`, `client_id uuid FK clients`
+- `frequency text` (monthly/bimonthly/quarterly/semiannual/annual)
+- `amount numeric`, `currency text default 'EUR'`
+- `start_date date`, `due_day integer nullable`
+- `notes text nullable`, `status text default 'active'`
+- `created_at timestamptz`
+
+`client_payments`:
+- `id uuid PK`, `plan_id uuid FK client_payment_plans`
+- `trainer_id uuid FK`, `client_id uuid FK`
+- `due_date date`, `amount numeric`, `currency text`
+- `status text` (due/overdue/paid_by_client/confirmed)
+- `paid_at timestamptz nullable`, `trainer_confirmed_at timestamptz nullable`
+- `notes text nullable`
+
+**Trigger `auto_create_fattura_note`** (BEFORE UPDATE su `client_payments`):
+- Si attiva quando `status` cambia a `paid_by_client`
+- Inserisce automaticamente una nota in `trainer_personal_notes` con titolo "Fare fattura" e riferimento al cliente
+
+**Service Swift:**
+- `TrainerClientPaymentService.createOrUpdatePaymentPlan`: INSERT/UPDATE piano + chiama `generateUpcomingPayments`
+- `TrainerClientPaymentService.confirmPayment`: UPDATE `status = 'confirmed'`, `trainer_confirmed_at = now()`
+- `ClientPaymentService.markPaymentAsPaidByClient`: UPDATE `status = 'paid_by_client'`, `paid_at = now()`
 
 ## Problemi Supabase da risolvere
 

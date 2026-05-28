@@ -1,6 +1,6 @@
 # TODO operativo
 
-Data aggiornamento: 2026-05-28
+Data aggiornamento: 2026-05-29
 
 ## Agenda trainer — fix settimana + linea appuntamenti (2026-05-28)
 
@@ -10,6 +10,29 @@ Data aggiornamento: 2026-05-28
 - [x] Indicatore oggi: bordo 1.5pt sottile invece di sfondo pieno
 - [x] Selected state: sfondo `txtPrimary` (nero), testo bianco
 - [ ] Testare lunedì–domenica su iPhone reale con locale diversa
+
+## Dashboard Trainer + Note + Pagamenti (2026-05-29)
+
+- [x] Dashboard trainer: note personali spostate come primo blocco dopo header
+- [x] `todayAgendaWithBanner`: banner appuntamenti integrato in cima alla FitCard agenda (non più standalone)
+- [x] `DashboardNoteRow`: riga nota con barra priorità, preview, pill, checkmark button
+- [x] `AddTrainerNoteSheet`: form nuova/modifica nota con priority picker e data opzionale
+- [x] `TrainerPersonalNotesListView`: lista completa note con filter pills e toggle completate
+- [x] `ClientDetailView`: tab "Pagamenti" aggiunto (5° tab)
+- [x] `TrainerClientPaymentsView`: vista gestione pagamenti cliente lato trainer
+- [x] `CreatePaymentPlanSheet`: form creazione/modifica piano pagamenti
+- [x] `TrainerClientPaymentService.confirmPayment`: metodo confirm pagamento
+- [x] `ClientDashboardView.paymentsCard`: card pagamenti in dashboard cliente
+- [x] `ClientPaymentsView`: vista pagamenti lato cliente con "Segna come pagato"
+- [x] `AddClientView`: pagamento opzionale con Toggle (solo nuovo cliente)
+- [x] `AddClientView`: copia codice inline (bottone affiancato al codice, non sotto)
+- [ ] Testare su Xcode: build con nuovi struct e EnvironmentObject
+- [ ] Testare dashboard trainer: ordine sezioni (note → agenda)
+- [ ] Testare banner agenda: tap → naviga al tab Agenda
+- [ ] Testare AddClientView: sezione pagamento visibile solo per nuovo cliente
+- [ ] Testare su Supabase: client_payment_plans + client_payments generati dopo creazione cliente
+- [ ] Testare trigger fattura: si attiva su paid_by_client
+- [ ] Testare confirmPayment: aggiorna status + trainer_confirmed_at
 
 ## Dashboard Trainer — card statistiche e agenda giornaliera (2026-05-28)
 
