@@ -310,15 +310,15 @@ struct DashboardStatCard: View {
 
     var body: some View {
         Button { onTap?() } label: {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .top) {
-                    FitIconChip(systemName: icon, color: iconColor, background: iconBackground, size: 30)
+                    FitIconChip(systemName: icon, color: iconColor, background: iconBackground, size: 44)
                     Spacer()
                     if let delta {
                         TrendBadge(value: delta)
                     }
                 }
-                Spacer(minLength: 4)
+                Spacer(minLength: 6)
                 Text(value)
                     .font(DesignSystem.Typography.numberLG())
                     .foregroundStyle(DesignSystem.Colors.txtPrimary)
@@ -327,7 +327,7 @@ struct DashboardStatCard: View {
                     .foregroundStyle(DesignSystem.Colors.txtSecondary)
             }
             .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 110, alignment: .leading)
+            .frame(maxWidth: .infinity, minHeight: 126, alignment: .leading)
             .background(DesignSystem.Colors.bgCard)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(

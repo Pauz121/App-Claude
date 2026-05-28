@@ -202,6 +202,22 @@ struct ProgressEntry: Identifiable, Codable, Hashable {
     var notes: String
 }
 
+struct SavedMealFood: Identifiable, Codable, Hashable {
+    var id: UUID
+    var foodCatalogID: UUID?
+    var name: String
+    var quantityGrams: Double
+    var caloriesPer100g: Double
+    var proteinPer100g: Double
+    var carbPer100g: Double
+    var fatPer100g: Double
+
+    var kcal: Double { caloriesPer100g * quantityGrams / 100 }
+    var proteinGrams: Double { proteinPer100g * quantityGrams / 100 }
+    var carbGrams: Double { carbPer100g * quantityGrams / 100 }
+    var fatGrams: Double { fatPer100g * quantityGrams / 100 }
+}
+
 struct SavedMeal: Identifiable, Codable, Hashable {
     var id: UUID
     var trainerID: UUID
@@ -212,8 +228,12 @@ struct SavedMeal: Identifiable, Codable, Hashable {
     var fatGrams: Double
     var notes: String
     var createdAt: Date
+    var foods: [SavedMealFood] = []
 
-    var kcal: Double { proteinGrams * 4 + carbGrams * 4 + fatGrams * 9 }
+    var displayProtein: Double { foods.isEmpty ? proteinGrams : foods.reduce(0) { $0 + $1.proteinGrams } }
+    var displayCarb: Double { foods.isEmpty ? carbGrams : foods.reduce(0) { $0 + $1.carbGrams } }
+    var displayFat: Double { foods.isEmpty ? fatGrams : foods.reduce(0) { $0 + $1.fatGrams } }
+    var kcal: Double { foods.isEmpty ? proteinGrams * 4 + carbGrams * 4 + fatGrams * 9 : foods.reduce(0) { $0 + $1.kcal } }
 }
 
 enum DailyGoalType: String, Codable, CaseIterable, Identifiable {

@@ -94,6 +94,27 @@ Da completare nell'app:
 - Lettura foto con signed URL o download autenticato.
 - Cancellazione foto e metadata.
 
+## Migrations applicate localmente (da applicare su Supabase remoto)
+
+| File | Data | Descrizione |
+|------|------|-------------|
+| `20260517123000_daily_engagement_healthkit.sql` | 2026-05-17 | Tabelle HealthKit, check-in, obiettivi, streak, insight |
+| `20260528120000_meals_day_of_week.sql` | 2026-05-28 | Colonna `day_of_week integer` su `meals` + indice composite |
+| `20260528140000_exercise_progress_entries.sql` | 2026-05-28 | Tabella `exercise_progress_entries` con `exercise_name`, RLS completa |
+| `20260528150000_saved_meals_foods.sql` | 2026-05-28 | Tabelle `saved_meals` + `saved_meal_foods`, RLS trainer-owned, cascade delete |
+
+### meals.day_of_week
+
+```sql
+alter table public.meals
+  add column if not exists day_of_week integer check (day_of_week between 1 and 7);
+create index if not exists idx_meals_plan_day
+  on public.meals(nutrition_plan_id, day_of_week, meal_order);
+```
+
+Semantica: `1=Lunedì … 7=Domenica`. `NULL` = piano senza raggruppamento settimanale.
+Utilizzata dal wizard "Crea nuova dieta" per associare ogni pasto al giorno della settimana.
+
 ## Problemi Supabase da risolvere
 
 - Account demo assenti.

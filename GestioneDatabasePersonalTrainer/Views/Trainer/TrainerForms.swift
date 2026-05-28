@@ -1322,6 +1322,7 @@ struct CreateNutritionPlanView: View {
     @State private var fats = 65
     // Step 2 — meal structure
     @State private var nutritionDays: [NutritionDay] = []
+    @State private var selectedDayForEdit: IdentifiableInt? = nil
     @State private var showingSavedMealPicker = false
     @State private var savedMeals: [SavedMeal] = []
     @State private var pendingDayIndex: Int = 0
@@ -1333,7 +1334,9 @@ struct CreateNutritionPlanView: View {
     let onCreate: (NutritionPlan) -> Void
 
     private let totalSteps = 3
-    private let mealSlots = ["Colazione", "Spuntino mattina", "Pranzo", "Merenda", "Cena", "Pre-nanna", "Altro"]
+    private let mealSlots = ["Colazione", "Spuntino mattina", "Pranzo", "Spuntino pomeridiano", "Cena", "Pre-nanna"]
+    private let weekdayLabels = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+    private let mealHours = [7, 10, 13, 16, 20, 22]
 
     init(clients: [Client], catalogService: CatalogService? = nil, services: AppServices? = nil, onCreate: @escaping (NutritionPlan) -> Void) {
         self.clients = clients
@@ -1375,6 +1378,16 @@ struct CreateNutritionPlanView: View {
             .sheet(isPresented: $showingSavedMealPicker) {
                 SavedMealPickerSheet(meals: savedMeals) { selected in
                     importSavedMeal(selected, toDayIndex: pendingDayIndex, mealSlotName: pendingMealSlot)
+                }
+            }
+            .sheet(item: $selectedDayForEdit) { item in
+                if let idx = nutritionDays.firstIndex(where: { $0.dayIndex == item.id }) {
+                    NutritionDayDetailSheet(
+                        day: $nutritionDays[idx],
+                        mealSlots: mealSlots,
+                        mealHours: mealHours,
+                        catalogService: catalogService
+                    )
                 }
             }
             .appScreen()
@@ -1548,36 +1561,38 @@ struct CreateNutritionPlanView: View {
         }
     }
 
-    // MARK: Step 2 — Struttura pasti per giorno
+    // MARK: Step 2 — Struttura settimanale
     private var stepTwo: some View {
         VStack(alignment: .leading, spacing: 16) {
-            SectionLabel(text: "Passo 3 · Pasti giornalieri")
-            Text("Struttura i pasti").font(.custom("Archivo-ExtraBold", size: 26)).foregroundStyle(DesignSystem.Colors.txtPrimary)
+            SectionLabel(text: "Passo 3 · Struttura settimanale")
+            Text("Organizza i pasti")
+                .font(.custom("Archivo-ExtraBold", size: 26))
+                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+            Text("Tocca un giorno per impostare pasti e alimenti.")
+                .font(DesignSystem.Typography.bodySM())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
 
-            ForEach($nutritionDays) { $day in
-                NutritionDayCard(day: $day, mealSlots: mealSlots, onAddMeal: { slotName in
-                    pendingDayIndex = day.dayIndex
-                    pendingMealSlot = slotName
-                    showingSavedMealPicker = true
-                }, onDelete: { nutritionDays.removeAll { $0.id == day.id } })
-            }
-
-            SecondaryButton(title: "+ Aggiungi giorno") {
-                let next = (nutritionDays.map(\.dayIndex).max() ?? 0) + 1
-                let defaultMeals = mealSlots.prefix(3).enumerated().map { i, name in
-                    Meal(id: UUID(), name: name, time: .daysFromNow(0, hour: [7, 13, 20][i]), foods: [], notes: "", dayIndex: next)
+            LazyVStack(spacing: 10) {
+                ForEach(nutritionDays) { day in
+                    NutritionWeekDayRow(day: day) {
+                        selectedDayForEdit = IdentifiableInt(id: day.dayIndex)
+                    }
                 }
-                nutritionDays.append(NutritionDay(id: UUID(), dayIndex: next, label: "Giorno \(next)", meals: Array(defaultMeals)))
             }
         }
     }
 
     private func buildDefaultDays() {
-        nutritionDays = [
-            NutritionDay(id: UUID(), dayIndex: 1, label: "Giorno tipo", meals: mealSlots.prefix(5).enumerated().map { i, name in
-                Meal(id: UUID(), name: name, time: .daysFromNow(0, hour: [7, 10, 13, 16, 20][i]), foods: [], notes: "", dayIndex: 1)
-            })
-        ]
+        nutritionDays = (1...7).map { idx in
+            NutritionDay(
+                id: UUID(),
+                dayIndex: idx,
+                label: weekdayLabels[idx - 1],
+                meals: mealSlots.enumerated().map { i, name in
+                    Meal(id: UUID(), name: name, time: .daysFromNow(0, hour: mealHours[i]), foods: [], notes: "", dayIndex: idx)
+                }
+            )
+        }
     }
 
     private func importSavedMeal(_ saved: SavedMeal, toDayIndex: Int, mealSlotName: String) {
@@ -1612,6 +1627,9 @@ struct CreateNutritionPlanView: View {
         dismiss()
     }
 }
+
+// MARK: - Helpers
+struct IdentifiableInt: Identifiable { var id: Int }
 
 // MARK: - Nutrition Day model (local)
 struct NutritionDay: Identifiable {
@@ -1829,5 +1847,459 @@ struct SavedMealPickerSheet: View {
             }
         }
         .appScreen()
+    }
+}
+
+// MARK: - NutritionWeekDayRow
+
+private struct NutritionWeekDayRow: View {
+    let day: NutritionDay
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            FitCard {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(day.totalKcal > 0 ? DesignSystem.Colors.teal : DesignSystem.Colors.bgLine)
+                        Text("\(day.dayIndex)")
+                            .font(.custom("Archivo-Black", size: 14))
+                            .foregroundStyle(day.totalKcal > 0 ? .white : DesignSystem.Colors.txtSecondary)
+                    }
+                    .frame(width: 36, height: 36)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(day.label)
+                            .font(.custom("Archivo-ExtraBold", size: 15))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text(daySummary)
+                            .font(DesignSystem.Typography.bodySM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    Spacer()
+                    if day.totalKcal > 0 {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(DesignSystem.Colors.teal)
+                            .font(.body)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var daySummary: String {
+        if day.totalKcal > 0 {
+            return "\(day.meals.count) pasti · \(day.totalKcal) kcal"
+        }
+        return day.meals.isEmpty ? "Nessun pasto" : "\(day.meals.count) pasti · nessun alimento"
+    }
+}
+
+// MARK: - NutritionDayDetailSheet
+
+struct NutritionDayDetailSheet: View {
+    @Binding var day: NutritionDay
+    let mealSlots: [String]
+    let mealHours: [Int]
+    let catalogService: CatalogService?
+    @Environment(\.dismiss) private var dismiss
+    @State private var editingMealIdx: IdentifiableInt? = nil
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if day.totalKcal > 0 {
+                        FitCard {
+                            HStack(spacing: 14) {
+                                FitIconChip(systemName: "flame.fill", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 40)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("\(day.totalKcal) kcal totali")
+                                        .font(.custom("Archivo-ExtraBold", size: 18))
+                                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                    HStack(spacing: 8) {
+                                        macroChip("P \(Int(day.totalProtein))g", DesignSystem.Colors.teal)
+                                        macroChip("C \(Int(day.totalCarb))g", DesignSystem.Colors.amber)
+                                        macroChip("G \(Int(day.totalFat))g", DesignSystem.Colors.limeDark)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    SectionLabel(text: "Pasti")
+                    LazyVStack(spacing: 10) {
+                        ForEach(day.meals.indices, id: \.self) { idx in
+                            mealRow(idx: idx)
+                        }
+                    }
+
+                    Menu {
+                        ForEach(mealSlots, id: \.self) { slot in
+                            Button(slot) {
+                                let hour = mealHourFor(slot)
+                                day.meals.append(Meal(id: UUID(), name: slot, time: .daysFromNow(0, hour: hour), foods: [], notes: "", dayIndex: day.dayIndex))
+                            }
+                        }
+                    } label: {
+                        Label("Aggiungi pasto", systemImage: "plus")
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.teal)
+                    }
+                    .padding(.top, 2)
+                }
+                .padding(20)
+            }
+            .navigationTitle(day.label)
+            .navigationBarTitleDisplayMode(.large)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fine") { dismiss() }
+                        .foregroundStyle(DesignSystem.Colors.teal)
+                }
+            }
+            .sheet(item: $editingMealIdx) { item in
+                if item.id < day.meals.count {
+                    MealFoodEditorSheet(meal: $day.meals[item.id], catalogService: catalogService)
+                }
+            }
+            .appScreen()
+        }
+    }
+
+    private func mealRow(idx: Int) -> some View {
+        let meal = day.meals[idx]
+        let mealKcal = meal.foods.reduce(0) { $0 + Int($1.kcal) }
+        return Button { editingMealIdx = IdentifiableInt(id: idx) } label: {
+            FitCard {
+                HStack(spacing: 12) {
+                    Image(systemName: mealIcon(meal.name))
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(DesignSystem.Colors.teal)
+                        .frame(width: 36, height: 36)
+                        .background(DesignSystem.Colors.tealBg)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(meal.name)
+                            .font(.custom("Archivo-ExtraBold", size: 15))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text(meal.foods.isEmpty
+                             ? "Tocca per aggiungere alimenti"
+                             : "\(meal.foods.count) alimenti · \(mealKcal) kcal")
+                            .font(DesignSystem.Typography.bodySM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    Spacer()
+                    if !meal.foods.isEmpty {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(DesignSystem.Colors.teal)
+                            .font(.body)
+                    }
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func macroChip(_ text: String, _ color: Color) -> some View {
+        Text(text).font(DesignSystem.Typography.labelSM()).foregroundStyle(color)
+            .padding(.horizontal, 6).padding(.vertical, 3)
+            .background(color.opacity(0.1)).clipShape(Capsule())
+    }
+
+    private func mealIcon(_ name: String) -> String {
+        let n = name.lowercased()
+        if n.contains("colazione") { return "sunrise.fill" }
+        if n.contains("spuntino") && n.contains("matt") { return "cup.and.saucer.fill" }
+        if n.contains("pranzo") { return "sun.max.fill" }
+        if n.contains("spuntino") { return "apple.logo" }
+        if n.contains("cena") { return "moon.fill" }
+        if n.contains("nanna") || n.contains("pre") { return "moon.zzz.fill" }
+        return "fork.knife"
+    }
+
+    private func mealHourFor(_ name: String) -> Int {
+        let n = name.lowercased()
+        if n.contains("colazione") { return 7 }
+        if n.contains("matt") { return 10 }
+        if n.contains("pranzo") { return 13 }
+        if n.contains("pomer") { return 16 }
+        if n.contains("cena") { return 20 }
+        if n.contains("nanna") { return 22 }
+        return mealHours.first ?? 12
+    }
+}
+
+// MARK: - MealFoodEditorSheet
+
+struct MealFoodEditorSheet: View {
+    @Binding var meal: Meal
+    let catalogService: CatalogService?
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var searchText = ""
+    @State private var catalog: [FoodCatalogDTO] = []
+    @State private var selectedFood: FoodCatalogDTO? = nil
+    @State private var quantityGrams: Double = 100
+    @State private var isLoadingCatalog = false
+
+    private var filtered: [FoodCatalogDTO] {
+        let q = searchText.trimmingCharacters(in: .whitespaces)
+        guard !q.isEmpty else { return [] }
+        return Array(catalog.filter { $0.name.localizedCaseInsensitiveContains(q) }.prefix(20))
+    }
+
+    private var mealKcal: Int { meal.foods.reduce(0) { $0 + Int($1.kcal) } }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                SearchBarView(text: $searchText, placeholder: "Cerca alimento nel catalogo…")
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+                Divider().background(DesignSystem.Colors.bgLine)
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        if let food = selectedFood {
+                            addFoodPanel(food)
+                        } else if !filtered.isEmpty {
+                            searchResultsSection
+                        } else if isLoadingCatalog {
+                            HStack { Spacer(); ProgressView(); Spacer() }.padding(.top, 30)
+                        } else if meal.foods.isEmpty && searchText.isEmpty {
+                            emptyPrompt
+                        }
+
+                        if !meal.foods.isEmpty {
+                            SectionLabel(text: "Nel pasto")
+                            LazyVStack(spacing: 8) {
+                                ForEach($meal.foods) { $food in
+                                    addedFoodRow($food) {
+                                        meal.foods.removeAll { $0.id == food.id }
+                                    }
+                                }
+                            }
+                            mealTotalsCard
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+            .navigationTitle(meal.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fine") { dismiss() }.foregroundStyle(DesignSystem.Colors.teal)
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    if selectedFood != nil {
+                        Button("Annulla") { selectedFood = nil; quantityGrams = 100 }
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                }
+            }
+            .appScreen()
+            .task {
+                isLoadingCatalog = true
+                catalog = await catalogService?.fetchFoodCatalog() ?? []
+                isLoadingCatalog = false
+            }
+        }
+    }
+
+    // MARK: Search results
+    private var searchResultsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            SectionLabel(text: "Risultati")
+            LazyVStack(spacing: 8) {
+                ForEach(filtered) { food in
+                    Button {
+                        selectedFood = food
+                        quantityGrams = 100
+                        searchText = ""
+                    } label: {
+                        FitCard {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(food.name)
+                                        .font(.custom("Archivo-ExtraBold", size: 14))
+                                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                    Text(food.category)
+                                        .font(DesignSystem.Typography.labelSM())
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                }
+                                Spacer()
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    if let kcal = food.caloriesPer100g {
+                                        Text("\(kcal) kcal")
+                                            .font(DesignSystem.Typography.labelSM())
+                                            .foregroundStyle(DesignSystem.Colors.teal)
+                                    }
+                                    Text("per 100\(food.unit)")
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                }
+                                Image(systemName: "plus.circle.fill")
+                                    .foregroundStyle(DesignSystem.Colors.teal)
+                                    .font(.title3)
+                                    .padding(.leading, 4)
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    // MARK: Add food panel
+    private func addFoodPanel(_ food: FoodCatalogDTO) -> some View {
+        FitCard(background: DesignSystem.Colors.tealBg, border: DesignSystem.Colors.teal) {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(food.name)
+                            .font(.custom("Archivo-ExtraBold", size: 16))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text(food.category)
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    Spacer()
+                    Button { selectedFood = nil; quantityGrams = 100 } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                HStack(spacing: 12) {
+                    Text("Quantità")
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Spacer()
+                    TextField("100", value: $quantityGrams, format: .number)
+                        .keyboardType(.decimalPad)
+                        .font(.custom("Archivo-Black", size: 22))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 72)
+                    Text(food.unit)
+                        .font(DesignSystem.Typography.labelMD())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+
+                HStack(spacing: 8) {
+                    nutritionPill("\(Int(computedKcal(food))) kcal", DesignSystem.Colors.teal)
+                    nutritionPill("P \(Int(computedMacro(food.proteinsPer100g)))g", DesignSystem.Colors.teal)
+                    nutritionPill("C \(Int(computedMacro(food.carbsPer100g)))g", DesignSystem.Colors.amber)
+                    nutritionPill("G \(Int(computedMacro(food.fatsPer100g)))g", DesignSystem.Colors.limeDark)
+                }
+                .animation(.easeInOut(duration: 0.18), value: quantityGrams)
+
+                AccentButton(title: "Aggiungi al pasto", color: DesignSystem.Colors.teal) {
+                    commitFood(food)
+                }
+            }
+        }
+    }
+
+    // MARK: Added food row
+    private func addedFoodRow(_ food: Binding<MealFood>, onDelete: @escaping () -> Void) -> some View {
+        FitCard {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(food.name.wrappedValue)
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Text(food.quantity.wrappedValue)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                Spacer()
+                Text("\(Int(food.wrappedValue.kcal)) kcal")
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.teal)
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "trash").font(.footnote).foregroundStyle(AppColors.dangerRed)
+                }
+            }
+        }
+    }
+
+    // MARK: Meal totals
+    private var mealTotalsCard: some View {
+        FitCard {
+            HStack(spacing: 14) {
+                FitIconChip(systemName: "flame.fill", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 36)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(mealKcal) kcal")
+                        .font(.custom("Archivo-ExtraBold", size: 18))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut, value: mealKcal)
+                    HStack(spacing: 8) {
+                        Text("P \(Int(meal.foods.reduce(0) { $0 + $1.proteinGrams }))g").font(DesignSystem.Typography.labelSM()).foregroundStyle(DesignSystem.Colors.teal)
+                        Text("C \(Int(meal.foods.reduce(0) { $0 + $1.carbGrams }))g").font(DesignSystem.Typography.labelSM()).foregroundStyle(DesignSystem.Colors.amber)
+                        Text("G \(Int(meal.foods.reduce(0) { $0 + $1.fatGrams }))g").font(DesignSystem.Typography.labelSM()).foregroundStyle(DesignSystem.Colors.limeDark)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: Empty state
+    private var emptyPrompt: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 34))
+                .foregroundStyle(DesignSystem.Colors.txtSecondary.opacity(0.35))
+            Text("Cerca un alimento per aggiungerlo al pasto.")
+                .font(DesignSystem.Typography.bodySM())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 36)
+    }
+
+    // MARK: Helpers
+    private func computedKcal(_ food: FoodCatalogDTO) -> Double {
+        if let base = food.caloriesPer100g { return Double(base) * quantityGrams / 100 }
+        return computedMacro(food.proteinsPer100g) * 4 +
+               computedMacro(food.carbsPer100g) * 4 +
+               computedMacro(food.fatsPer100g) * 9
+    }
+
+    private func computedMacro(_ per100g: Double?) -> Double {
+        (per100g ?? 0) * quantityGrams / 100
+    }
+
+    private func nutritionPill(_ text: String, _ color: Color) -> some View {
+        Text(text).font(DesignSystem.Typography.labelSM()).foregroundStyle(color)
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(color.opacity(0.1)).clipShape(Capsule())
+    }
+
+    private func commitFood(_ food: FoodCatalogDTO) {
+        let protein = computedMacro(food.proteinsPer100g)
+        let carbs   = computedMacro(food.carbsPer100g)
+        let fats    = computedMacro(food.fatsPer100g)
+        let qty = food.unit.lowercased() == "g" || food.unit.lowercased() == "ml"
+            ? "\(Int(quantityGrams))\(food.unit)"
+            : "\(Int(quantityGrams)) \(food.unit)"
+        meal.foods.append(MealFood(id: UUID(), name: food.name, quantity: qty, notes: "", proteinGrams: protein, carbGrams: carbs, fatGrams: fats))
+        selectedFood = nil
+        quantityGrams = 100
     }
 }

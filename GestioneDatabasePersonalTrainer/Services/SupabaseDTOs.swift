@@ -238,6 +238,49 @@ struct WorkoutTemplateDTO: Codable, Identifiable, Hashable {
     var description: String?
 }
 
+struct MealDTO: Codable {
+    var id: UUID?
+    var nutritionPlanId: UUID
+    var name: String
+    var mealTime: String?
+    var mealOrder: Int
+    var dayOfWeek: Int?
+    var notes: String?
+}
+
+struct MealFoodDTO: Codable {
+    var id: UUID?
+    var mealId: UUID
+    var foodName: String
+    var quantity: String
+    var calories: Int?
+    var proteinsG: Double?
+    var carbsG: Double?
+    var fatsG: Double?
+    var notes: String?
+}
+
+struct SavedMealDTO: Codable {
+    var id: UUID?
+    var trainerId: UUID
+    var name: String
+    var description: String?
+    var notes: String?
+    var createdAt: String?
+}
+
+struct SavedMealFoodDTO: Codable {
+    var id: UUID?
+    var savedMealId: UUID
+    var foodCatalogId: UUID?
+    var name: String
+    var quantityGrams: Double
+    var caloriesPer100g: Double?
+    var proteinPer100g: Double?
+    var carbPer100g: Double?
+    var fatPer100g: Double?
+}
+
 struct RPCTrainerInviteParams: Codable {
     let pTrainerId: UUID
     let pClientId: UUID
@@ -517,6 +560,57 @@ enum SupabaseMapper {
             lastCompletedAt: streak.lastCompletedAt.map(formatDate),
             createdAt: nil,
             updatedAt: nil
+        )
+    }
+
+    static func savedMeal(from dto: SavedMealDTO, foods: [SavedMealFoodDTO] = []) -> SavedMeal {
+        SavedMeal(
+            id: dto.id ?? UUID(),
+            trainerID: dto.trainerId,
+            name: dto.name,
+            description: dto.description ?? "",
+            proteinGrams: 0,
+            carbGrams: 0,
+            fatGrams: 0,
+            notes: dto.notes ?? "",
+            createdAt: iso.date(from: dto.createdAt ?? "") ?? Date(),
+            foods: foods.map { f in
+                SavedMealFood(
+                    id: f.id ?? UUID(),
+                    foodCatalogID: f.foodCatalogId,
+                    name: f.name,
+                    quantityGrams: f.quantityGrams,
+                    caloriesPer100g: f.caloriesPer100g ?? 0,
+                    proteinPer100g: f.proteinPer100g ?? 0,
+                    carbPer100g: f.carbPer100g ?? 0,
+                    fatPer100g: f.fatPer100g ?? 0
+                )
+            }
+        )
+    }
+
+    static func savedMealDTO(from meal: SavedMeal) -> SavedMealDTO {
+        SavedMealDTO(
+            id: meal.id,
+            trainerId: meal.trainerID,
+            name: meal.name,
+            description: meal.description.isEmpty ? nil : meal.description,
+            notes: meal.notes.isEmpty ? nil : meal.notes,
+            createdAt: nil
+        )
+    }
+
+    static func savedMealFoodDTO(from food: SavedMealFood, savedMealId: UUID) -> SavedMealFoodDTO {
+        SavedMealFoodDTO(
+            id: food.id,
+            savedMealId: savedMealId,
+            foodCatalogId: food.foodCatalogID,
+            name: food.name,
+            quantityGrams: food.quantityGrams,
+            caloriesPer100g: food.caloriesPer100g,
+            proteinPer100g: food.proteinPer100g,
+            carbPer100g: food.carbPer100g,
+            fatPer100g: food.fatPer100g
         )
     }
 

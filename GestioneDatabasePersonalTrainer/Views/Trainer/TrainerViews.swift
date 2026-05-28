@@ -51,6 +51,9 @@ struct TrainerDashboardView: View {
                     header
                     kpiGrid
 
+                    SectionLabel(text: "Agenda di oggi")
+                    todayAgenda
+
                     SectionLabel(text: "Azioni rapide")
                     quickActions
                 }
@@ -184,6 +187,57 @@ struct TrainerDashboardView: View {
         }
     }
 
+    private var todayAgenda: some View {
+        FitCard {
+            if viewModel.appointmentsForToday.isEmpty {
+                HStack(spacing: 14) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 22, weight: .regular))
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary.opacity(0.5))
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Nessun appuntamento oggi")
+                            .font(.custom("Archivo-ExtraBold", size: 14))
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        Button { showingAddAppointment = true } label: {
+                            Text("Aggiungi appuntamento →")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.indigo)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+                .padding(.vertical, 4)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(viewModel.appointmentsForToday.enumerated()), id: \.element.id) { index, appt in
+                        DashboardAgendaRow(
+                            appointment: appt,
+                            clientName: viewModel.clientName(for: appt)
+                        )
+                        if index < viewModel.appointmentsForToday.count - 1 {
+                            Divider()
+                                .background(DesignSystem.Colors.bgLine)
+                                .padding(.leading, 68)
+                        }
+                    }
+                    NavigationLink {
+                        AppointmentsCalendarView(trainer: trainer, services: services)
+                    } label: {
+                        HStack {
+                            Spacer()
+                            Text("Vai all'agenda →")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.indigo)
+                        }
+                        .padding(.top, 10)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
     private func reload() {
         viewModel.load()
         Task { clients = await services.clientService.fetchClients(for: trainer.id) }
@@ -206,6 +260,86 @@ struct TrainerDashboardView: View {
             joinedAt: Date(),
             trainerNotes: ""
         )
+    }
+}
+
+private struct DashboardAgendaRow: View {
+    let appointment: Appointment
+    let clientName: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(startTimeString)
+                    .font(.custom("Archivo-ExtraBold", size: 13))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text(durationString)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+            .frame(width: 52, alignment: .trailing)
+
+            RoundedRectangle(cornerRadius: 2, style: .continuous)
+                .fill(statusColor)
+                .frame(width: 3, height: 44)
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(clientName)
+                    .font(.custom("Archivo-ExtraBold", size: 14))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                HStack(spacing: 6) {
+                    Text(appointment.sessionType.rawValue)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(sessionTypeColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(sessionTypeColor.opacity(0.1))
+                        .clipShape(Capsule())
+                    Text(appointment.status.rawValue)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(statusColor)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .background(statusColor.opacity(0.1))
+                        .clipShape(Capsule())
+                }
+                if !appointment.notes.isEmpty {
+                    Text(appointment.notes)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        .lineLimit(1)
+                }
+            }
+            Spacer()
+        }
+        .padding(.vertical, 10)
+    }
+
+    private var startTimeString: String {
+        appointment.startTime.formatted(.dateTime.hour(.twoDigits(amPM: .omitted)).minute())
+    }
+
+    private var durationString: String {
+        let minutes = Int(appointment.endTime.timeIntervalSince(appointment.startTime) / 60)
+        return "\(minutes)min"
+    }
+
+    private var statusColor: Color {
+        switch appointment.status {
+        case .scheduled: return DesignSystem.Colors.indigo
+        case .completed: return DesignSystem.Colors.teal
+        case .cancelled: return DesignSystem.Colors.amber
+        }
+    }
+
+    private var sessionTypeColor: Color {
+        switch appointment.sessionType {
+        case .workout: return DesignSystem.Colors.limeDark
+        case .assessment: return DesignSystem.Colors.indigo
+        case .nutrition: return DesignSystem.Colors.teal
+        case .checkin: return DesignSystem.Colors.amber
+        case .recovery: return DesignSystem.Colors.txtSecondary
+        }
     }
 }
 
@@ -352,6 +486,7 @@ struct ClientDetailView: View {
     @State private var workoutPlans: [WorkoutPlan] = []
     @State private var nutritionPlans: [NutritionPlan] = []
     @State private var progressEntries: [ProgressEntry] = []
+    @State private var exerciseHistory: [ExerciseWeightHistoryDTO] = []
     let client: Client
     let onSave: (Client) -> Void
     let onDelete: (Client) -> Void
@@ -414,6 +549,7 @@ struct ClientDetailView: View {
             workoutPlans = await services.workoutService.fetchWorkoutPlans(forClient: client.id)
             nutritionPlans = await services.nutritionService.fetchNutritionPlans(forClient: client.id)
             progressEntries = await services.progressService.fetchProgressEntries(for: client.id)
+            exerciseHistory = await services.workoutService.fetchExerciseWeightHistory(for: client.id)
         }
     }
 
@@ -439,40 +575,103 @@ struct ClientDetailView: View {
 
     private var scheduleTab: some View {
         VStack(spacing: 12) {
-            ForEach(workoutPlans.first?.days ?? []) { day in
-                FitCard {
-                    HStack {
-                        FitIconChip(systemName: "dumbbell.fill", color: DesignSystem.Colors.indigo, background: DesignSystem.Colors.indigoBg, size: 34)
-                        VStack(alignment: .leading) {
-                            Text(day.title)
-                                .font(.custom("Archivo-ExtraBold", size: 15))
-                            Text("\(day.exercises.count) esercizi")
-                                .font(DesignSystem.Typography.bodySM())
-                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
-                        }
-                        Spacer()
-                    }
+            if let active = workoutPlans.first(where: { $0.status == .active }) ?? workoutPlans.first {
+                NavigationLink {
+                    TrainerClientWorkoutPlansView(client: client, workoutPlans: workoutPlans)
+                } label: {
+                    workoutPlanSummaryCard(active, isActive: active.status == .active)
                 }
+                .buttonStyle(.plain)
+            } else {
+                EmptyStateView(title: "Nessuna scheda", message: "Crea una scheda per questo cliente.", icon: "dumbbell")
             }
-            AccentButton(title: "Modifica scheda", color: DesignSystem.Colors.indigo) {}
         }
     }
 
     private var dietTab: some View {
         VStack(spacing: 12) {
-            if let plan = nutritionPlans.first {
-                FitCard {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("\(plan.dailyCalories) kcal")
-                            .font(.custom("Archivo-Black", size: 26))
-                            .foregroundStyle(DesignSystem.Colors.teal)
-                        Text("P \(plan.proteinGrams)g · C \(plan.carbohydrateGrams)g · G \(plan.fatGrams)g")
-                            .font(DesignSystem.Typography.labelMD())
+            if let active = nutritionPlans.first {
+                NavigationLink {
+                    TrainerClientNutritionPlansView(client: client, nutritionPlans: nutritionPlans)
+                } label: {
+                    nutritionPlanSummaryCard(active)
+                }
+                .buttonStyle(.plain)
+            } else {
+                EmptyStateView(title: "Nessun piano", message: "Crea un piano alimentare per questo cliente.", icon: "fork.knife")
+            }
+        }
+    }
+
+    private func workoutPlanSummaryCard(_ plan: WorkoutPlan, isActive: Bool) -> some View {
+        FitCard(border: isActive ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgLine, lineWidth: isActive ? 2 : 1) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(plan.name)
+                            .font(.custom("Archivo-ExtraBold", size: 16))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text(plan.goal.isEmpty ? "Nessun obiettivo" : plan.goal)
+                            .font(DesignSystem.Typography.bodySM())
                             .foregroundStyle(DesignSystem.Colors.txtSecondary)
                     }
+                    Spacer()
+                    Text(plan.status.rawValue)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(isActive ? DesignSystem.Colors.limeDark : DesignSystem.Colors.txtSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(isActive ? DesignSystem.Colors.limeBg : DesignSystem.Colors.bgLine)
+                        .clipShape(Capsule())
+                }
+                HStack(spacing: 16) {
+                    Label("\(plan.days.count) giorni", systemImage: "calendar")
+                    Label("\(plan.days.flatMap(\.exercises).count) esercizi", systemImage: "dumbbell")
+                }
+                .font(DesignSystem.Typography.labelSM())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                HStack {
+                    Text("\(plan.startDate.formattedDay()) – \(plan.endDate.formattedDay())")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(DesignSystem.Colors.indigo)
                 }
             }
-            AccentButton(title: "Modifica piano", color: DesignSystem.Colors.indigo) {}
+        }
+    }
+
+    private func nutritionPlanSummaryCard(_ plan: NutritionPlan) -> some View {
+        FitCard(border: DesignSystem.Colors.teal, lineWidth: 2) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("\(plan.dailyCalories) kcal")
+                        .font(.custom("Archivo-Black", size: 22))
+                        .foregroundStyle(DesignSystem.Colors.teal)
+                    Spacer()
+                    Text("Attivo")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.teal)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(DesignSystem.Colors.tealBg)
+                        .clipShape(Capsule())
+                }
+                Text("P \(plan.proteinGrams)g · C \(plan.carbohydrateGrams)g · G \(plan.fatGrams)g")
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                HStack {
+                    Text("\(plan.startDate.formattedDay()) – \(plan.endDate.formattedDay())")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(DesignSystem.Colors.teal)
+                }
+            }
         }
     }
 
@@ -487,29 +686,63 @@ struct ClientDetailView: View {
     }
 
     private var progressTab: some View {
-        VStack(spacing: 12) {
-            HStack(spacing: 10) {
-                compactProgress("Peso", String(format: "%.1fkg", client.currentWeightKg), DesignSystem.Colors.limeDark)
-                compactProgress("Inizio", String(format: "%.1fkg", client.initialWeightKg), DesignSystem.Colors.indigo)
-            }
-            FitCard {
-                Chart(progressEntries.sorted { $0.date < $1.date }) { entry in
-                    BarMark(x: .value("Data", entry.date), y: .value("Peso", entry.weightKg))
-                        .foregroundStyle(DesignSystem.Colors.indigo)
-                }
-                .frame(height: 170)
-            }
+        NavigationLink {
+            TrainerClientProgressView(
+                client: client,
+                progressEntries: progressEntries,
+                exerciseHistory: exerciseHistory,
+                workoutPlans: workoutPlans
+            )
+        } label: {
+            progressSummaryCard
         }
+        .buttonStyle(.plain)
     }
 
-    private func compactProgress(_ title: String, _ value: String, _ color: Color) -> some View {
-        FitCard {
-            Text(value)
-                .font(.custom("Archivo-Black", size: 22))
-                .foregroundStyle(color)
-            Text(title)
-                .font(DesignSystem.Typography.labelSM())
-                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+    private var progressSummaryCard: some View {
+        let diff = client.currentWeightKg - client.initialWeightKg
+        let exerciseCount = Set(exerciseHistory.map(\.exerciseId)).count
+        return FitCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("Progressi")
+                        .font(.custom("Archivo-ExtraBold", size: 16))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(format: "%.1f kg", client.currentWeightKg))
+                            .font(.custom("Archivo-Black", size: 22))
+                            .foregroundStyle(DesignSystem.Colors.limeDark)
+                        Text("peso attuale")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(String(format: "%+.1f kg", diff))
+                            .font(.custom("Archivo-Black", size: 22))
+                            .foregroundStyle(diff <= 0 ? DesignSystem.Colors.teal : DesignSystem.Colors.amber)
+                        Text("dall'inizio")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    Spacer()
+                    if exerciseCount > 0 {
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text("\(exerciseCount)")
+                                .font(.custom("Archivo-Black", size: 22))
+                                .foregroundStyle(DesignSystem.Colors.indigo)
+                            Text("esercizi")
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -522,6 +755,951 @@ struct ClientDetailView: View {
             case .diet: return "Dieta"
             case .feedback: return "Feedback"
             case .progress: return "Progressi"
+            }
+        }
+    }
+}
+
+// MARK: - Trainer: lista schede cliente
+
+struct TrainerClientWorkoutPlansView: View {
+    let client: Client
+    let workoutPlans: [WorkoutPlan]
+
+    private var activePlan: WorkoutPlan? {
+        workoutPlans.first(where: { $0.status == .active }) ?? workoutPlans.first
+    }
+    private var historicalPlans: [WorkoutPlan] {
+        workoutPlans.filter { $0.id != activePlan?.id }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if let plan = activePlan {
+                    SectionLabel(text: "Scheda attiva")
+                    NavigationLink {
+                        TrainerClientWorkoutPlanDetailView(plan: plan, client: client)
+                    } label: {
+                        workoutPlanCard(plan, highlighted: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !historicalPlans.isEmpty {
+                    SectionLabel(text: "Storiche (\(historicalPlans.count))")
+                    LazyVStack(spacing: 12) {
+                        ForEach(historicalPlans) { plan in
+                            NavigationLink {
+                                TrainerClientWorkoutPlanDetailView(plan: plan, client: client)
+                            } label: {
+                                workoutPlanCard(plan, highlighted: false)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if workoutPlans.isEmpty {
+                    EmptyStateView(title: "Nessuna scheda", message: "Nessuna scheda assegnata a questo cliente.", icon: "dumbbell")
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("\(client.firstName) · Schede")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    private func workoutPlanCard(_ plan: WorkoutPlan, highlighted: Bool) -> some View {
+        FitCard(border: highlighted ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgLine, lineWidth: highlighted ? 2 : 1) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(plan.name)
+                            .font(.custom("Archivo-ExtraBold", size: 16))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text(plan.goal.isEmpty ? "Nessun obiettivo" : plan.goal)
+                            .font(DesignSystem.Typography.bodySM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    Spacer()
+                    Text(plan.status.rawValue)
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(highlighted ? DesignSystem.Colors.limeDark : DesignSystem.Colors.txtSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(highlighted ? DesignSystem.Colors.limeBg : DesignSystem.Colors.bgLine)
+                        .clipShape(Capsule())
+                }
+                HStack(spacing: 16) {
+                    Label("\(plan.days.count) giorni", systemImage: "calendar")
+                    Label("\(plan.days.flatMap(\.exercises).count) esercizi", systemImage: "dumbbell")
+                }
+                .font(DesignSystem.Typography.labelSM())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                HStack {
+                    Text("\(plan.startDate.formattedDay()) – \(plan.endDate.formattedDay())")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(DesignSystem.Colors.indigo)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Trainer: dettaglio scheda cliente
+
+struct TrainerClientWorkoutPlanDetailView: View {
+    let plan: WorkoutPlan
+    let client: Client
+    @State private var expandedDay: UUID? = nil
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                FitCard(border: plan.status == .active ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgLine, lineWidth: plan.status == .active ? 2 : 1) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(plan.name)
+                                    .font(.custom("Archivo-ExtraBold", size: 18))
+                                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                if !plan.goal.isEmpty {
+                                    Text(plan.goal)
+                                        .font(DesignSystem.Typography.bodyMD())
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                }
+                            }
+                            Spacer()
+                            Text(plan.status.rawValue)
+                                .font(DesignSystem.Typography.labelSM())
+                                .foregroundStyle(plan.status == .active ? DesignSystem.Colors.limeDark : DesignSystem.Colors.txtSecondary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(plan.status == .active ? DesignSystem.Colors.limeBg : DesignSystem.Colors.bgLine)
+                                .clipShape(Capsule())
+                        }
+                        Divider()
+                        HStack(spacing: 16) {
+                            Label("\(plan.days.count) giorni", systemImage: "calendar")
+                            Label("\(plan.days.flatMap(\.exercises).count) esercizi", systemImage: "dumbbell")
+                        }
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        Text("\(plan.startDate.formattedDay()) – \(plan.endDate.formattedDay())")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                }
+
+                SectionLabel(text: "Giorni di allenamento")
+
+                if plan.days.isEmpty {
+                    EmptyStateView(title: "Nessun giorno", message: "Questa scheda non ha giorni configurati.", icon: "calendar")
+                } else {
+                    LazyVStack(spacing: 10) {
+                        ForEach(plan.days.sorted { $0.dayIndex < $1.dayIndex }) { day in
+                            trainerDayCard(day)
+                        }
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle(plan.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    private func trainerDayCard(_ day: WorkoutDay) -> some View {
+        let isExpanded = expandedDay == day.id
+        return FitCard {
+            VStack(spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        expandedDay = isExpanded ? nil : day.id
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Text("\(day.dayIndex)")
+                            .font(.custom("Archivo-Black", size: 14))
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .background(day.exercises.isEmpty ? DesignSystem.Colors.bgLine : DesignSystem.Colors.indigo)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(day.title)
+                                .font(.custom("Archivo-ExtraBold", size: 15))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            Text(day.exercises.isEmpty ? "Riposo" : "\(day.exercises.count) esercizi · ~\(max(day.exercises.count * 8, 25)) min")
+                                .font(DesignSystem.Typography.bodySM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if isExpanded && !day.exercises.isEmpty {
+                    Divider().padding(.top, 12)
+                    LazyVStack(spacing: 8) {
+                        ForEach(day.exercises.sorted { $0.order < $1.order }) { exercise in
+                            TrainerExerciseRow(exercise: exercise)
+                        }
+                    }
+                    .padding(.top, 10)
+                }
+            }
+        }
+    }
+}
+
+private struct TrainerExerciseRow: View {
+    let exercise: Exercise
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text("\(exercise.order)")
+                .font(.custom("Archivo-Black", size: 13))
+                .foregroundStyle(DesignSystem.Colors.indigo)
+                .frame(width: 28, height: 28)
+                .background(DesignSystem.Colors.indigoBg)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(exercise.name)
+                    .font(.custom("Archivo-ExtraBold", size: 14))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                HStack(spacing: 4) {
+                    Text("\(exercise.sets)×\(exercise.reps)")
+                    Text("·")
+                    Text("rec \(exercise.restSeconds)s")
+                    if !exercise.recommendedLoad.isEmpty {
+                        Text("·")
+                        Text(exercise.recommendedLoad)
+                            .foregroundStyle(DesignSystem.Colors.limeDark)
+                    }
+                }
+                .font(DesignSystem.Typography.bodySM())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                if !exercise.technicalNotes.isEmpty {
+                    Text(exercise.technicalNotes)
+                        .font(DesignSystem.Typography.bodySM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        .lineLimit(2)
+                }
+            }
+            Spacer()
+        }
+    }
+}
+
+// MARK: - Trainer: lista diete cliente
+
+struct TrainerClientNutritionPlansView: View {
+    let client: Client
+    let nutritionPlans: [NutritionPlan]
+
+    private var activePlan: NutritionPlan? { nutritionPlans.first }
+    private var historicalPlans: [NutritionPlan] { Array(nutritionPlans.dropFirst()) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                if let plan = activePlan {
+                    SectionLabel(text: "Piano attivo")
+                    NavigationLink {
+                        TrainerClientNutritionPlanDetailView(plan: plan, client: client)
+                    } label: {
+                        nutritionPlanCard(plan, highlighted: true)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !historicalPlans.isEmpty {
+                    SectionLabel(text: "Storici (\(historicalPlans.count))")
+                    LazyVStack(spacing: 12) {
+                        ForEach(historicalPlans) { plan in
+                            NavigationLink {
+                                TrainerClientNutritionPlanDetailView(plan: plan, client: client)
+                            } label: {
+                                nutritionPlanCard(plan, highlighted: false)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                if nutritionPlans.isEmpty {
+                    EmptyStateView(title: "Nessun piano", message: "Nessun piano alimentare assegnato a questo cliente.", icon: "fork.knife")
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("\(client.firstName) · Diete")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    private func nutritionPlanCard(_ plan: NutritionPlan, highlighted: Bool) -> some View {
+        FitCard(border: highlighted ? DesignSystem.Colors.teal : DesignSystem.Colors.bgLine, lineWidth: highlighted ? 2 : 1) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("\(plan.dailyCalories) kcal")
+                        .font(.custom("Archivo-Black", size: 20))
+                        .foregroundStyle(DesignSystem.Colors.teal)
+                    Spacer()
+                    Text(highlighted ? "Attivo" : "Archiviato")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(highlighted ? DesignSystem.Colors.teal : DesignSystem.Colors.txtSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(highlighted ? DesignSystem.Colors.tealBg : DesignSystem.Colors.bgLine)
+                        .clipShape(Capsule())
+                }
+                Text("P \(plan.proteinGrams)g · C \(plan.carbohydrateGrams)g · G \(plan.fatGrams)g")
+                    .font(DesignSystem.Typography.labelMD())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                HStack {
+                    Text("\(plan.startDate.formattedDay()) – \(plan.endDate.formattedDay())")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(highlighted ? DesignSystem.Colors.teal : DesignSystem.Colors.txtSecondary)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Trainer: dettaglio dieta cliente
+
+struct TrainerClientNutritionPlanDetailView: View {
+    let plan: NutritionPlan
+    let client: Client
+    @State private var expandedDay: Int? = nil
+
+    private let weekdayLabels = ["", "Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"]
+
+    private var hasWeeklyGrouping: Bool {
+        plan.meals.contains { $0.dayIndex > 0 }
+    }
+
+    private var groupedByDay: [(dayIndex: Int, meals: [Meal])] {
+        let days = Array(Set(plan.meals.map(\.dayIndex))).sorted()
+        return days.map { d in
+            (dayIndex: d, meals: plan.meals.filter { $0.dayIndex == d }.sorted { $0.time < $1.time })
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                FitCard(border: DesignSystem.Colors.teal, lineWidth: 2) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Piano alimentare")
+                                    .font(.custom("Archivo-ExtraBold", size: 18))
+                                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                if plan.targetWeightKg > 0 {
+                                    Text(String(format: "Obiettivo: %.1f kg", plan.targetWeightKg))
+                                        .font(DesignSystem.Typography.bodySM())
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                }
+                            }
+                            Spacer()
+                            Text("\(plan.dailyCalories) kcal")
+                                .font(.custom("Archivo-Black", size: 22))
+                                .foregroundStyle(DesignSystem.Colors.teal)
+                        }
+                        HStack(spacing: 16) {
+                            macroChip("P", "\(plan.proteinGrams)g", DesignSystem.Colors.teal)
+                            macroChip("C", "\(plan.carbohydrateGrams)g", DesignSystem.Colors.amber)
+                            macroChip("G", "\(plan.fatGrams)g", DesignSystem.Colors.limeDark)
+                        }
+                        Divider()
+                        Text("\(plan.startDate.formattedDay()) – \(plan.endDate.formattedDay())")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                }
+
+                if plan.meals.isEmpty {
+                    FitCard {
+                        VStack(spacing: 8) {
+                            Image(systemName: "fork.knife")
+                                .font(.system(size: 28))
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            Text("Pasti non ancora caricati")
+                                .font(DesignSystem.Typography.bodyMD())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            Text("I dati arriveranno quando il piano viene salvato con il nuovo flusso.")
+                                .font(DesignSystem.Typography.bodySM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    }
+                } else if hasWeeklyGrouping {
+                    SectionLabel(text: "Piano settimanale")
+                    LazyVStack(spacing: 10) {
+                        ForEach(groupedByDay, id: \.dayIndex) { group in
+                            trainerDayMealCard(group)
+                        }
+                    }
+                } else {
+                    SectionLabel(text: "Pasti")
+                    LazyVStack(spacing: 10) {
+                        ForEach(plan.meals) { meal in
+                            TrainerMealRow(meal: meal, estimatedDayKcal: plan.dailyCalories, totalMealsInDay: plan.meals.count)
+                        }
+                    }
+                }
+
+                if !plan.notes.isEmpty {
+                    SectionLabel(text: "Note")
+                    FitCard {
+                        Text(plan.notes)
+                            .font(DesignSystem.Typography.bodyMD())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("Piano alimentare")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    private func macroChip(_ label: String, _ value: String, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(DesignSystem.Typography.labelSM())
+                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            Text(value)
+                .font(.custom("Archivo-ExtraBold", size: 14))
+                .foregroundStyle(color)
+        }
+    }
+
+    private func mealKcal(_ meal: Meal) -> Int {
+        let fromFoods = meal.foods.reduce(0.0) { $0 + $1.kcal }
+        if fromFoods > 0 { return Int(fromFoods) }
+        return plan.dailyCalories / max(plan.meals.count, 1)
+    }
+
+    private func trainerDayMealCard(_ group: (dayIndex: Int, meals: [Meal])) -> some View {
+        let isExpanded = expandedDay == group.dayIndex
+        let label = group.dayIndex > 0 && group.dayIndex < weekdayLabels.count
+            ? weekdayLabels[group.dayIndex] : "Giorno \(group.dayIndex)"
+        let totalKcal = group.meals.reduce(0) { $0 + mealKcal($1) }
+        return FitCard {
+            VStack(spacing: 0) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        expandedDay = isExpanded ? nil : group.dayIndex
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Text("\(group.dayIndex)")
+                            .font(.custom("Archivo-Black", size: 14))
+                            .foregroundStyle(.white)
+                            .frame(width: 34, height: 34)
+                            .background(DesignSystem.Colors.teal)
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(label)
+                                .font(.custom("Archivo-ExtraBold", size: 15))
+                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                            Text("\(group.meals.count) pasti · \(totalKcal) kcal")
+                                .font(DesignSystem.Typography.bodySM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                        Spacer()
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                }
+                .buttonStyle(.plain)
+
+                if isExpanded {
+                    Divider().padding(.top, 12)
+                    LazyVStack(spacing: 8) {
+                        ForEach(group.meals) { meal in
+                            TrainerMealRow(meal: meal, estimatedDayKcal: plan.dailyCalories, totalMealsInDay: max(group.meals.count, 1))
+                        }
+                    }
+                    .padding(.top, 10)
+                }
+            }
+        }
+    }
+}
+
+private struct TrainerMealRow: View {
+    let meal: Meal
+    let estimatedDayKcal: Int
+    let totalMealsInDay: Int
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.18)) { expanded.toggle() }
+            } label: {
+                HStack(spacing: 12) {
+                    FitIconChip(systemName: "fork.knife", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 30)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(meal.name)
+                            .font(.custom("Archivo-ExtraBold", size: 14))
+                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                        Text(meal.foods.isEmpty ? "Nessun alimento" : meal.foods.map(\.name).joined(separator: ", "))
+                            .font(DesignSystem.Typography.bodySM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            .lineLimit(1)
+                    }
+                    Spacer()
+                    Text("\(estimatedKcal) kcal")
+                        .font(DesignSystem.Typography.labelSM())
+                        .foregroundStyle(DesignSystem.Colors.teal)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if expanded && !meal.foods.isEmpty {
+                Divider().padding(.top, 10)
+                VStack(spacing: 6) {
+                    ForEach(meal.foods) { food in
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(food.name)
+                                    .font(.custom("Archivo-ExtraBold", size: 13))
+                                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                Text("P\(Int(food.proteinGrams))g · C\(Int(food.carbGrams))g · G\(Int(food.fatGrams))g")
+                                    .font(DesignSystem.Typography.bodySM())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(food.quantity)
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                Text("\(Int(food.kcal)) kcal")
+                                    .font(DesignSystem.Typography.labelSM())
+                                    .foregroundStyle(DesignSystem.Colors.teal)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
+        }
+    }
+
+    private var estimatedKcal: Int {
+        let fromFoods = meal.foods.reduce(0.0) { $0 + $1.kcal }
+        if fromFoods > 0 { return Int(fromFoods) }
+        return estimatedDayKcal / totalMealsInDay
+    }
+}
+
+// MARK: - Trainer: progressi cliente
+
+private struct ExerciseProgressGroup: Identifiable {
+    var id: UUID { exerciseId }
+    let exerciseId: UUID
+    let name: String
+    let entries: [ExerciseWeightHistoryDTO]
+
+    var firstWeight: Double? { entries.first?.weightKg }
+    var lastWeight: Double? { entries.last?.weightKg }
+    var gain: Double? {
+        guard let f = firstWeight, let l = lastWeight else { return nil }
+        return l - f
+    }
+}
+
+struct TrainerClientProgressView: View {
+    let client: Client
+    let progressEntries: [ProgressEntry]
+    let exerciseHistory: [ExerciseWeightHistoryDTO]
+    let workoutPlans: [WorkoutPlan]
+
+    @State private var segment = 0
+    private let segments = ["Peso", "Esercizi"]
+
+    private var sortedEntries: [ProgressEntry] {
+        progressEntries.sorted { $0.date < $1.date }
+    }
+    private var weightDiff: Double { client.currentWeightKg - client.initialWeightKg }
+    private var hasMeasurements: Bool {
+        progressEntries.contains { $0.waistCm > 0 || $0.chestCm > 0 || $0.armCm > 0 || $0.legCm > 0 }
+    }
+    private var latestEntry: ProgressEntry? { sortedEntries.last }
+
+    private var exerciseNameMap: [UUID: String] {
+        workoutPlans
+            .flatMap(\.days)
+            .flatMap(\.exercises)
+            .reduce(into: [:]) { $0[$1.id] = $1.name }
+    }
+    private var exerciseGroups: [ExerciseProgressGroup] {
+        let grouped = Dictionary(grouping: exerciseHistory, by: \.exerciseId)
+        return grouped.map { exerciseId, entries in
+            let sorted = entries.sorted { ($0.sessionDate ?? "") < ($1.sessionDate ?? "") }
+            let name = exerciseNameMap[exerciseId] ?? "Esercizio (\(exerciseId.uuidString.prefix(6)))"
+            return ExerciseProgressGroup(exerciseId: exerciseId, name: name, entries: sorted)
+        }
+        .sorted { $0.name < $1.name }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                Picker("", selection: $segment) {
+                    ForEach(segments.indices, id: \.self) { i in
+                        Text(segments[i]).tag(i)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.bottom, 4)
+
+                if segment == 0 {
+                    weightSection
+                } else {
+                    exerciseSection
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle("\(client.firstName) · Progressi")
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    // ── Peso ────────────────────────────────────────────────
+
+    private var weightSection: some View {
+        VStack(spacing: 14) {
+            HStack(spacing: 10) {
+                weightStatCard("Inizio", String(format: "%.1f kg", client.initialWeightKg), DesignSystem.Colors.indigo)
+                weightStatCard("Attuale", String(format: "%.1f kg", client.currentWeightKg), DesignSystem.Colors.limeDark)
+                weightStatCard("Diff.", String(format: "%+.1f kg", weightDiff), weightDiff <= 0 ? DesignSystem.Colors.teal : DesignSystem.Colors.amber)
+            }
+
+            FitCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Andamento peso")
+                        .font(.custom("Archivo-ExtraBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    if sortedEntries.count > 1 {
+                        Chart {
+                            ForEach(sortedEntries) { entry in
+                                LineMark(x: .value("Data", entry.date), y: .value("kg", entry.weightKg))
+                                    .foregroundStyle(DesignSystem.Colors.indigo)
+                                    .interpolationMethod(.catmullRom)
+                                AreaMark(x: .value("Data", entry.date), y: .value("kg", entry.weightKg))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [DesignSystem.Colors.indigo.opacity(0.13), .clear],
+                                            startPoint: .top, endPoint: .bottom
+                                        )
+                                    )
+                            }
+                        }
+                        .chartYScale(domain: .automatic(includesZero: false))
+                        .chartXAxis {
+                            AxisMarks(values: .stride(by: .month)) { _ in
+                                AxisGridLine()
+                                AxisValueLabel(format: .dateTime.month(.abbreviated), centered: true)
+                            }
+                        }
+                        .frame(height: 170)
+                    } else if sortedEntries.count == 1 {
+                        HStack(spacing: 8) {
+                            Image(systemName: "info.circle")
+                                .foregroundStyle(DesignSystem.Colors.indigo)
+                            Text("Una misurazione. Aggiungi altre per vedere il grafico.")
+                                .font(DesignSystem.Typography.bodySM())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                        .padding(.vertical, 16)
+                    } else {
+                        EmptyStateView(title: "Nessuna misurazione", message: "Aggiungi misure per vedere l'andamento del peso.", icon: "chart.line.uptrend.xyaxis")
+                            .frame(height: 120)
+                    }
+                }
+            }
+
+            if hasMeasurements, let entry = latestEntry {
+                SectionLabel(text: "Ultima misurazione")
+                HStack(spacing: 10) {
+                    measureStatCard("Vita", entry.waistCm, "cm")
+                    measureStatCard("Petto", entry.chestCm, "cm")
+                }
+                HStack(spacing: 10) {
+                    measureStatCard("Braccio", entry.armCm, "cm")
+                    measureStatCard("Coscia", entry.legCm, "cm")
+                }
+            }
+        }
+    }
+
+    // ── Esercizi ─────────────────────────────────────────────
+
+    private var exerciseSection: some View {
+        VStack(spacing: 12) {
+            if exerciseGroups.isEmpty {
+                EmptyStateView(
+                    title: "Nessun dato esercizi",
+                    message: "I carichi vengono registrati durante gli allenamenti del cliente.",
+                    icon: "dumbbell"
+                )
+            } else {
+                LazyVStack(spacing: 12) {
+                    ForEach(exerciseGroups) { group in
+                        NavigationLink {
+                            TrainerClientExerciseProgressDetailView(group: group)
+                        } label: {
+                            ExerciseSparklineCard(group: group)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    private func weightStatCard(_ title: String, _ value: String, _ color: Color) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(value)
+                    .font(.custom("Archivo-Black", size: 17))
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(title)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+
+    private func measureStatCard(_ title: String, _ value: Double, _ unit: String) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(value > 0 ? String(format: "%.1f \(unit)", value) : "--")
+                    .font(.custom("Archivo-Black", size: 18))
+                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                Text(title)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+}
+
+private struct ExerciseSparklineCard: View {
+    let group: ExerciseProgressGroup
+
+    private struct SparkPoint: Identifiable {
+        let id: Int
+        let weight: Double
+    }
+    private var sparkPoints: [SparkPoint] {
+        group.entries.enumerated().map { SparkPoint(id: $0.offset, weight: $0.element.weightKg) }
+    }
+
+    var body: some View {
+        FitCard {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(group.name)
+                        .font(.custom("Archivo-ExtraBold", size: 15))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    if let first = group.firstWeight, let last = group.lastWeight {
+                        Text(String(format: "%.1f kg → %.1f kg", first, last))
+                            .font(DesignSystem.Typography.bodySM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                    if let gain = group.gain {
+                        Text(String(format: "%+.1f kg", gain))
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(gain >= 0 ? DesignSystem.Colors.limeDark : DesignSystem.Colors.amber)
+                    }
+                }
+                Spacer()
+                if sparkPoints.count > 1 {
+                    Chart(sparkPoints) { p in
+                        LineMark(x: .value("i", p.id), y: .value("kg", p.weight))
+                            .foregroundStyle(DesignSystem.Colors.indigo)
+                            .interpolationMethod(.catmullRom)
+                    }
+                    .chartXAxis(.hidden)
+                    .chartYAxis(.hidden)
+                    .chartYScale(domain: .automatic(includesZero: false))
+                    .frame(width: 68, height: 38)
+                } else {
+                    Image(systemName: "chart.line.uptrend.xyaxis")
+                        .font(.system(size: 18))
+                        .foregroundStyle(DesignSystem.Colors.bgLine)
+                        .frame(width: 68, height: 38)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+            }
+        }
+    }
+}
+
+struct TrainerClientExerciseProgressDetailView: View {
+    let group: ExerciseProgressGroup
+
+    private struct ChartPoint: Identifiable {
+        let id: Int
+        let weight: Double
+        let label: String
+    }
+    private var chartPoints: [ChartPoint] {
+        group.entries.enumerated().map { i, e in
+            let label: String
+            if let dateStr = e.sessionDate {
+                let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
+                if let d = fmt.date(from: dateStr) {
+                    let out = DateFormatter(); out.dateFormat = "dd/MM"
+                    label = out.string(from: d)
+                } else { label = "S\(i + 1)" }
+            } else { label = "S\(i + 1)" }
+            return ChartPoint(id: i, weight: e.weightKg, label: label)
+        }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(spacing: 10) {
+                    exStatCard("Primo", group.firstWeight.map { String(format: "%.1f kg", $0) } ?? "--", DesignSystem.Colors.indigo)
+                    exStatCard("Ultimo", group.lastWeight.map { String(format: "%.1f kg", $0) } ?? "--", DesignSystem.Colors.limeDark)
+                    exStatCard("Guadagno", group.gain.map { String(format: "%+.1f kg", $0) } ?? "--", (group.gain ?? 0) >= 0 ? DesignSystem.Colors.teal : DesignSystem.Colors.amber)
+                }
+
+                SectionLabel(text: "Carico nel tempo")
+                FitCard {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if chartPoints.count > 1 {
+                            Chart(chartPoints) { p in
+                                LineMark(x: .value("Sessione", p.id), y: .value("Carico (kg)", p.weight))
+                                    .foregroundStyle(DesignSystem.Colors.indigo)
+                                    .interpolationMethod(.catmullRom)
+                                AreaMark(x: .value("Sessione", p.id), y: .value("Carico (kg)", p.weight))
+                                    .foregroundStyle(
+                                        LinearGradient(
+                                            colors: [DesignSystem.Colors.indigo.opacity(0.13), .clear],
+                                            startPoint: .top, endPoint: .bottom
+                                        )
+                                    )
+                                PointMark(x: .value("Sessione", p.id), y: .value("Carico (kg)", p.weight))
+                                    .foregroundStyle(DesignSystem.Colors.indigo)
+                                    .symbolSize(36)
+                            }
+                            .chartYScale(domain: .automatic(includesZero: false))
+                            .chartXAxis {
+                                AxisMarks(values: .automatic) { v in
+                                    AxisValueLabel {
+                                        if let i = v.as(Int.self), i < chartPoints.count {
+                                            Text(chartPoints[i].label)
+                                                .font(DesignSystem.Typography.labelSM())
+                                        }
+                                    }
+                                }
+                            }
+                            .chartYAxisLabel("kg")
+                            .frame(height: 200)
+                        } else {
+                            HStack(spacing: 8) {
+                                Image(systemName: "info.circle")
+                                    .foregroundStyle(DesignSystem.Colors.indigo)
+                                Text("Solo una sessione. Continua ad allenarti per vedere il progresso.")
+                                    .font(DesignSystem.Typography.bodySM())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                            .padding(.vertical, 16)
+                        }
+                    }
+                }
+
+                SectionLabel(text: "Storico sessioni (\(group.entries.count))")
+                LazyVStack(spacing: 8) {
+                    ForEach(Array(group.entries.reversed().enumerated()), id: \.offset) { i, entry in
+                        sessionRow(entry, sessionIndex: group.entries.count - i)
+                    }
+                }
+            }
+            .padding(20)
+        }
+        .navigationTitle(group.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .appScreen()
+    }
+
+    private func sessionRow(_ entry: ExerciseWeightHistoryDTO, sessionIndex: Int) -> some View {
+        FitCard {
+            HStack(spacing: 12) {
+                Text("S\(sessionIndex)")
+                    .font(.custom("Archivo-Black", size: 13))
+                    .foregroundStyle(DesignSystem.Colors.indigo)
+                    .frame(width: 34, height: 34)
+                    .background(DesignSystem.Colors.indigoBg)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(String(format: "%.1f kg", entry.weightKg))
+                        .font(.custom("Archivo-ExtraBold", size: 15))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    if let dateStr = entry.sessionDate {
+                        Text(formattedDate(dateStr))
+                            .font(DesignSystem.Typography.bodySM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                    }
+                }
+                Spacer()
+            }
+        }
+    }
+
+    private func formattedDate(_ iso: String) -> String {
+        let fmt = DateFormatter(); fmt.dateFormat = "yyyy-MM-dd"
+        if let d = fmt.date(from: iso) {
+            let out = DateFormatter(); out.dateFormat = "d MMM yyyy"; out.locale = Locale(identifier: "it_IT")
+            return out.string(from: d)
+        }
+        return iso
+    }
+
+    private func exStatCard(_ title: String, _ value: String, _ color: Color) -> some View {
+        FitCard {
+            VStack(alignment: .leading, spacing: 5) {
+                Text(value)
+                    .font(.custom("Archivo-Black", size: 17))
+                    .foregroundStyle(color)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(title)
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
             }
         }
     }
@@ -609,32 +1787,49 @@ struct AppointmentsCalendarView: View {
     }
 
     private var weekView: some View {
-        HStack(alignment: .top, spacing: 8) {
-            ForEach(viewModel.weekDates().prefix(7), id: \.self) { date in
-                Button {
-                    withAnimation(.easeOut(duration: 0.18)) { viewModel.selectedDate = date }
-                } label: {
-                    VStack(spacing: 8) {
-                        Text(String(date.formatted(.dateTime.weekday(.abbreviated)).prefix(1)))
-                            .font(DesignSystem.Typography.labelSM())
-                        Text(date.formatted(.dateTime.day()))
-                            .font(.custom("Archivo-ExtraBold", size: 16))
-                        ForEach(0..<min(appointmentCount(on: date), 3), id: \.self) { _ in
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(DesignSystem.Colors.indigo)
-                                .frame(height: 8)
-                        }
-                    }
-                    .foregroundStyle(Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDate) ? .white : DesignSystem.Colors.txtPrimary)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 102)
-                    .background(Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDate) ? DesignSystem.Colors.indigo : DesignSystem.Colors.bgCard)
-                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(DesignSystem.Colors.bgLine, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
+        HStack(alignment: .top, spacing: 6) {
+            ForEach(viewModel.weekDates(), id: \.self) { date in
+                weekDayCell(date: date)
             }
         }
+    }
+
+    private func weekDayCell(date: Date) -> some View {
+        let isSelected = Calendar.current.isDate(date, inSameDayAs: viewModel.selectedDate)
+        let isToday    = Calendar.current.isDateInToday(date)
+        let hasAppts   = appointmentCount(on: date) > 0
+        return Button {
+            withAnimation(.easeOut(duration: 0.18)) { viewModel.selectedDate = date }
+        } label: {
+            VStack(spacing: 6) {
+                Text(String(date.formatted(.dateTime.weekday(.abbreviated)).prefix(1)))
+                    .font(DesignSystem.Typography.labelSM())
+                    .foregroundStyle(isSelected ? Color.white.opacity(0.72) : DesignSystem.Colors.txtSecondary)
+                Text(date.formatted(.dateTime.day()))
+                    .font(.custom("Archivo-ExtraBold", size: 15))
+                    .foregroundStyle(isSelected ? .white : DesignSystem.Colors.txtPrimary)
+                if hasAppts {
+                    Capsule()
+                        .frame(width: 20, height: 2.5)
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.78) : DesignSystem.Colors.txtPrimary.opacity(0.68))
+                } else {
+                    Color.clear.frame(height: 2.5)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 84)
+            .background(isSelected ? DesignSystem.Colors.txtPrimary : DesignSystem.Colors.bgCard)
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 13, style: .continuous)
+                    .stroke(
+                        isSelected ? Color.clear
+                            : (isToday ? DesignSystem.Colors.txtPrimary.opacity(0.4) : DesignSystem.Colors.bgLine),
+                        lineWidth: (isToday && !isSelected) ? 1.5 : 1
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     private var monthView: some View {
@@ -1386,14 +2581,9 @@ struct SavedMealsListView: View {
             }
             .padding(20)
         }
-        .navigationTitle("")
+        .navigationTitle("Pasti salvati")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Text("Pasti salvati")
-                    .font(.custom("Archivo-ExtraBold", size: 20))
-                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
-            }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { showingAdd = true } label: {
                     Image(systemName: "plus")
@@ -1407,12 +2597,15 @@ struct SavedMealsListView: View {
             }
         }
         .sheet(isPresented: $showingAdd) {
-            EditSavedMealSheet(meal: SavedMeal(id: UUID(), trainerID: trainer.id, name: "", description: "", proteinGrams: 0, carbGrams: 0, fatGrams: 0, notes: "", createdAt: Date())) { saved in
+            EditSavedMealSheet(
+                meal: SavedMeal(id: UUID(), trainerID: trainer.id, name: "", description: "", proteinGrams: 0, carbGrams: 0, fatGrams: 0, notes: "", createdAt: Date()),
+                catalogService: services.catalogService
+            ) { saved in
                 Task { _ = await services.savedMealService.createSavedMeal(saved); reload() }
             }
         }
         .sheet(item: $editingMeal) { meal in
-            EditSavedMealSheet(meal: meal) { updated in
+            EditSavedMealSheet(meal: meal, catalogService: services.catalogService) { updated in
                 Task { await services.savedMealService.updateSavedMeal(updated); reload() }
             }
         }
@@ -1433,10 +2626,13 @@ struct SavedMealsListView: View {
                         .foregroundStyle(DesignSystem.Colors.txtSecondary)
                         .lineLimit(1)
                     HStack(spacing: 8) {
-                        macroTag("P \(Int(meal.proteinGrams))g", DesignSystem.Colors.teal)
-                        macroTag("C \(Int(meal.carbGrams))g", DesignSystem.Colors.amber)
-                        macroTag("G \(Int(meal.fatGrams))g", DesignSystem.Colors.limeDark)
+                        macroTag("P \(Int(meal.displayProtein))g", DesignSystem.Colors.teal)
+                        macroTag("C \(Int(meal.displayCarb))g", DesignSystem.Colors.amber)
+                        macroTag("G \(Int(meal.displayFat))g", DesignSystem.Colors.limeDark)
                         macroTag("\(Int(meal.kcal)) kcal", DesignSystem.Colors.indigo)
+                        if !meal.foods.isEmpty {
+                            macroTag("\(meal.foods.count) alimenti", DesignSystem.Colors.indigo.opacity(0.7))
+                        }
                     }
                 }
                 Spacer()
@@ -1472,45 +2668,89 @@ struct SavedMealsListView: View {
 struct EditSavedMealSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var meal: SavedMeal
+    @State private var catalog: [FoodCatalogDTO] = []
+    @State private var showingFoodSearch = false
+    let catalogService: CatalogService
     let onSave: (SavedMeal) -> Void
 
-    init(meal: SavedMeal, onSave: @escaping (SavedMeal) -> Void) {
+    init(meal: SavedMeal, catalogService: CatalogService, onSave: @escaping (SavedMeal) -> Void) {
         _meal = State(initialValue: meal)
+        self.catalogService = catalogService
         self.onSave = onSave
     }
 
-    var computedKcal: Int { Int(meal.proteinGrams * 4 + meal.carbGrams * 4 + meal.fatGrams * 9) }
+    var totalKcal: Double { meal.foods.reduce(0) { $0 + $1.kcal } }
+    var totalProtein: Double { meal.foods.reduce(0) { $0 + $1.proteinGrams } }
+    var totalCarb: Double { meal.foods.reduce(0) { $0 + $1.carbGrams } }
+    var totalFat: Double { meal.foods.reduce(0) { $0 + $1.fatGrams } }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
                     FitInputField(label: "Nome pasto", text: $meal.name)
-                    FitInputField(label: "Descrizione / alimenti", text: $meal.description)
-                    SectionLabel(text: "Macro")
-                    HStack(spacing: 10) {
-                        macroInput("Proteine", value: $meal.proteinGrams, color: DesignSystem.Colors.teal)
-                        macroInput("Carbo", value: $meal.carbGrams, color: DesignSystem.Colors.amber)
-                        macroInput("Grassi", value: $meal.fatGrams, color: DesignSystem.Colors.limeDark)
+                    FitInputField(label: "Note (opzionale)", text: $meal.notes)
+
+                    HStack {
+                        SectionLabel(text: "Alimenti (\(meal.foods.count))")
+                        Spacer()
+                        Button { showingFoodSearch = true } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "plus")
+                                Text("Aggiungi")
+                            }
+                            .font(DesignSystem.Typography.labelMD())
+                            .foregroundStyle(DesignSystem.Colors.teal)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    FitCard {
-                        HStack {
-                            FitIconChip(systemName: "flame.fill", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 30)
-                            Text("Calorie calcolate")
-                                .font(DesignSystem.Typography.labelMD())
-                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
-                            Spacer()
-                            Text("\(computedKcal) kcal")
-                                .font(.custom("Archivo-ExtraBold", size: 18))
-                                .foregroundStyle(DesignSystem.Colors.teal)
+
+                    if meal.foods.isEmpty {
+                        FitCard {
+                            HStack(spacing: 10) {
+                                Image(systemName: "magnifyingglass")
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                Text("Cerca alimenti dal catalogo con il tasto +")
+                                    .font(DesignSystem.Typography.bodySM())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                        }
+                    } else {
+                        LazyVStack(spacing: 8) {
+                            ForEach(meal.foods) { food in
+                                foodRow(food)
+                            }
+                        }
+                        FitCard {
+                            VStack(spacing: 10) {
+                                HStack {
+                                    FitIconChip(systemName: "flame.fill", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 30)
+                                    Text("Totale")
+                                        .font(DesignSystem.Typography.labelMD())
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                    Spacer()
+                                    Text("\(Int(totalKcal)) kcal")
+                                        .font(.custom("Archivo-ExtraBold", size: 18))
+                                        .foregroundStyle(DesignSystem.Colors.teal)
+                                }
+                                HStack(spacing: 8) {
+                                    macroTag("P \(String(format: "%.1f", totalProtein))g", DesignSystem.Colors.teal)
+                                    macroTag("C \(String(format: "%.1f", totalCarb))g", DesignSystem.Colors.amber)
+                                    macroTag("G \(String(format: "%.1f", totalFat))g", DesignSystem.Colors.limeDark)
+                                    Spacer()
+                                }
+                            }
                         }
                     }
-                    FitInputField(label: "Note (opzionale)", text: $meal.notes)
+
                     AccentButton(title: "Salva pasto", color: DesignSystem.Colors.teal) {
+                        meal.proteinGrams = totalProtein
+                        meal.carbGrams = totalCarb
+                        meal.fatGrams = totalFat
                         onSave(meal)
                         dismiss()
                     }
-                    .disabled(meal.name.isEmpty)
+                    .disabled(meal.name.isEmpty || meal.foods.isEmpty)
                 }
                 .padding(20)
             }
@@ -1522,18 +2762,210 @@ struct EditSavedMealSheet: View {
             }
             .appScreen()
         }
+        .sheet(isPresented: $showingFoodSearch) {
+            SavedMealFoodSearchSheet(catalog: catalog) { food in
+                meal.foods.append(food)
+            }
+        }
+        .task {
+            if catalog.isEmpty {
+                catalog = await catalogService.fetchFoodCatalog()
+            }
+        }
     }
 
-    private func macroInput(_ label: String, value: Binding<Double>, color: Color) -> some View {
+    private func foodRow(_ food: SavedMealFood) -> some View {
         FitCard {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(label).font(DesignSystem.Typography.labelSM()).foregroundStyle(color)
-                TextField("0", value: value, format: .number)
-                    .keyboardType(.decimalPad)
-                    .font(.custom("Archivo-Black", size: 18))
-                    .foregroundStyle(DesignSystem.Colors.txtPrimary)
-                Text("g").font(DesignSystem.Typography.labelSM()).foregroundStyle(DesignSystem.Colors.txtSecondary)
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(food.name)
+                        .font(.custom("Archivo-SemiBold", size: 14))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                    HStack(spacing: 6) {
+                        Text("\(Int(food.quantityGrams))g")
+                            .font(DesignSystem.Typography.labelSM())
+                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        macroTag("P \(String(format: "%.1f", food.proteinGrams))g", DesignSystem.Colors.teal)
+                        macroTag("C \(String(format: "%.1f", food.carbGrams))g", DesignSystem.Colors.amber)
+                        macroTag("\(Int(food.kcal)) kcal", DesignSystem.Colors.indigo)
+                    }
+                }
+                Spacer()
+                Button {
+                    meal.foods.removeAll { $0.id == food.id }
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.red)
+                        .frame(width: 30, height: 30)
+                }
+                .buttonStyle(.plain)
             }
+        }
+    }
+
+    private func macroTag(_ text: String, _ color: Color) -> some View {
+        Text(text)
+            .font(DesignSystem.Typography.labelSM())
+            .foregroundStyle(color)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.1))
+            .clipShape(Capsule())
+    }
+}
+
+private struct SavedMealFoodSearchSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var searchText = ""
+    @State private var selectedFood: FoodCatalogDTO?
+    @State private var quantityGrams: Double = 100
+    let catalog: [FoodCatalogDTO]
+    let onAdd: (SavedMealFood) -> Void
+
+    var filtered: [FoodCatalogDTO] {
+        searchText.isEmpty ? catalog :
+            catalog.filter {
+                $0.name.localizedCaseInsensitiveContains(searchText) ||
+                $0.category.localizedCaseInsensitiveContains(searchText)
+            }
+    }
+
+    var computedKcal: Double {
+        guard let f = selectedFood, let kcal = f.caloriesPer100g else { return 0 }
+        return Double(kcal) * quantityGrams / 100
+    }
+
+    var body: some View {
+        NavigationStack {
+            Group {
+                if let food = selectedFood {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            FitCard {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(food.name)
+                                        .font(.custom("Archivo-ExtraBold", size: 18))
+                                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                    Text(food.category)
+                                        .font(DesignSystem.Typography.bodySM())
+                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                    if let kcal = food.caloriesPer100g {
+                                        Text("\(kcal) kcal / 100g")
+                                            .font(DesignSystem.Typography.labelSM())
+                                            .foregroundStyle(DesignSystem.Colors.teal)
+                                    }
+                                }
+                            }
+                            FitCard {
+                                VStack(spacing: 12) {
+                                    HStack {
+                                        Text("Quantità")
+                                            .font(DesignSystem.Typography.labelMD())
+                                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                        Spacer()
+                                        Stepper(value: $quantityGrams, in: 5...2000, step: 5) {
+                                            Text("\(Int(quantityGrams)) g")
+                                                .font(.custom("Archivo-ExtraBold", size: 16))
+                                                .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                        }
+                                    }
+                                    Divider()
+                                    HStack {
+                                        FitIconChip(systemName: "flame.fill", color: DesignSystem.Colors.teal, background: DesignSystem.Colors.tealBg, size: 28)
+                                        Text("Calorie")
+                                            .font(DesignSystem.Typography.labelMD())
+                                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                        Spacer()
+                                        Text("\(Int(computedKcal)) kcal")
+                                            .font(.custom("Archivo-ExtraBold", size: 17))
+                                            .foregroundStyle(DesignSystem.Colors.teal)
+                                    }
+                                }
+                            }
+                            AccentButton(title: "Aggiungi alimento", color: DesignSystem.Colors.teal) {
+                                let smf = SavedMealFood(
+                                    id: UUID(),
+                                    foodCatalogID: food.id,
+                                    name: food.name,
+                                    quantityGrams: quantityGrams,
+                                    caloriesPer100g: Double(food.caloriesPer100g ?? 0),
+                                    proteinPer100g: food.proteinsPer100g ?? 0,
+                                    carbPer100g: food.carbsPer100g ?? 0,
+                                    fatPer100g: food.fatsPer100g ?? 0
+                                )
+                                onAdd(smf)
+                                dismiss()
+                            }
+                            Button("Scegli altro alimento") { selectedFood = nil; quantityGrams = 100 }
+                                .font(DesignSystem.Typography.labelMD())
+                                .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                        }
+                        .padding(20)
+                    }
+                } else {
+                    VStack(spacing: 0) {
+                        SearchBarView(text: $searchText, placeholder: "Cerca alimento...")
+                            .padding([.horizontal, .top], 16)
+                        if catalog.isEmpty {
+                            VStack(spacing: 12) {
+                                ProgressView()
+                                Text("Caricamento catalogo...")
+                                    .font(DesignSystem.Typography.bodySM())
+                                    .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if filtered.isEmpty {
+                            EmptyStateView(title: "Nessun risultato", message: "Prova con un termine diverso.", icon: "magnifyingglass")
+                                .padding(20)
+                        } else {
+                            ScrollView {
+                                LazyVStack(spacing: 8) {
+                                    ForEach(filtered) { item in
+                                        Button { selectedFood = item; quantityGrams = 100 } label: {
+                                            FitCard {
+                                                HStack {
+                                                    VStack(alignment: .leading, spacing: 3) {
+                                                        Text(item.name)
+                                                            .font(.custom("Archivo-SemiBold", size: 14))
+                                                            .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                                                        Text(item.category)
+                                                            .font(DesignSystem.Typography.labelSM())
+                                                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                                    }
+                                                    Spacer()
+                                                    if let kcal = item.caloriesPer100g {
+                                                        Text("\(kcal) kcal/100g")
+                                                            .font(DesignSystem.Typography.labelSM())
+                                                            .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                                    }
+                                                    Image(systemName: "chevron.right")
+                                                        .font(.system(size: 11))
+                                                        .foregroundStyle(DesignSystem.Colors.txtSecondary)
+                                                }
+                                            }
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(16)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annulla") { dismiss() }.foregroundStyle(DesignSystem.Colors.txtSecondary)
+                }
+                ToolbarItem(placement: .principal) {
+                    Text(selectedFood != nil ? "Quantità" : "Cerca alimento")
+                        .font(.custom("Archivo-Bold", size: 16))
+                        .foregroundStyle(DesignSystem.Colors.txtPrimary)
+                }
+            }
+            .appScreen()
         }
     }
 }

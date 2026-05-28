@@ -73,7 +73,7 @@ final class AppServices: ObservableObject {
             activitySummaryService: activitySummaryService,
             streakService: streakService
         )
-        savedMealService = SavedMealService(database: database)
+        savedMealService = SavedMealService(database: database, supabase: supabase)
     }
 }
 
@@ -590,9 +590,46 @@ final class NutritionService {
             database.nutritionPlans.append(plan)
             return plan
         }
-        let dto = NutritionPlanDTO(id: plan.id, trainerId: plan.trainerID, clientId: plan.clientID, name: "Piano alimentare", dailyCalories: plan.dailyCalories, proteinsG: plan.proteinGrams, carbsG: plan.carbohydrateGrams, fatsG: plan.fatGrams, targetWeightKg: plan.targetWeightKg, notes: plan.notes, startsAt: SupabaseMapper.formatDate(plan.startDate), endsAt: SupabaseMapper.formatDate(plan.endDate), status: "active")
-        let _: [NutritionPlanDTO]? = try? await supabase.insert("nutrition_plans", value: dto)
+        let planDTO = NutritionPlanDTO(id: plan.id, trainerId: plan.trainerID, clientId: plan.clientID, name: "Piano alimentare", dailyCalories: plan.dailyCalories, proteinsG: plan.proteinGrams, carbsG: plan.carbohydrateGrams, fatsG: plan.fatGrams, targetWeightKg: plan.targetWeightKg, notes: plan.notes, startsAt: SupabaseMapper.formatDate(plan.startDate), endsAt: SupabaseMapper.formatDate(plan.endDate), status: "active")
+        let createdPlans: [NutritionPlanDTO]? = try? await supabase.insert("nutrition_plans", value: planDTO)
+        let planID = createdPlans?.first?.id ?? plan.id
+
+        for (order, meal) in plan.meals.enumerated() {
+            let mealDTO = MealDTO(
+                id: meal.id,
+                nutritionPlanId: planID,
+                name: meal.name,
+                mealTime: Self.formatTimeOnly(meal.time),
+                mealOrder: order + 1,
+                dayOfWeek: meal.dayIndex > 0 ? meal.dayIndex : nil,
+                notes: meal.notes.isEmpty ? nil : meal.notes
+            )
+            let savedMeals: [MealDTO]? = try? await supabase.insert("meals", value: mealDTO)
+            let mealID = savedMeals?.first?.id ?? meal.id
+
+            for food in meal.foods {
+                let kcalInt = food.kcal > 0 ? Int(food.kcal.rounded()) : nil
+                let foodDTO = MealFoodDTO(
+                    id: food.id,
+                    mealId: mealID,
+                    foodName: food.name,
+                    quantity: food.quantity,
+                    calories: kcalInt,
+                    proteinsG: food.proteinGrams > 0 ? food.proteinGrams : nil,
+                    carbsG: food.carbGrams > 0 ? food.carbGrams : nil,
+                    fatsG: food.fatGrams > 0 ? food.fatGrams : nil,
+                    notes: food.notes.isEmpty ? nil : food.notes
+                )
+                let _: [MealFoodDTO]? = try? await supabase.insert("meal_foods", value: foodDTO)
+            }
+        }
         return plan
+    }
+
+    private static func formatTimeOnly(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        return f.string(from: date)
     }
 }
 
@@ -717,27 +754,68 @@ final class CatalogService {
 @MainActor
 final class SavedMealService {
     private let database: MockDatabase
+    private let supabase: SupabaseManager
 
-    init(database: MockDatabase) {
+    init(database: MockDatabase, supabase: SupabaseManager) {
         self.database = database
+        self.supabase = supabase
     }
 
     func fetchSavedMeals(for trainerID: UUID) async -> [SavedMeal] {
-        database.savedMeals.filter { $0.trainerID == trainerID }.sorted { $0.name < $1.name }
+        guard AppConfiguration.isSupabaseConfigured else {
+            return database.savedMeals.filter { $0.trainerID == trainerID }.sorted { $0.name < $1.name }
+        }
+        let rows: [SavedMealDTO] = (try? await supabase.select("saved_meals", queryItems: [
+            URLQueryItem(name: "select", value: "*"),
+            URLQueryItem(name: "trainer_id", value: "eq.\(trainerID.uuidString)"),
+            URLQueryItem(name: "order", value: "name.asc")
+        ])) ?? []
+        var meals: [SavedMeal] = []
+        for dto in rows {
+            let mealID = dto.id ?? UUID()
+            let foods: [SavedMealFoodDTO] = (try? await supabase.select("saved_meal_foods", queryItems: [
+                URLQueryItem(name: "select", value: "*"),
+                URLQueryItem(name: "saved_meal_id", value: "eq.\(mealID.uuidString)")
+            ])) ?? []
+            meals.append(SupabaseMapper.savedMeal(from: dto, foods: foods))
+        }
+        return meals
     }
 
     func createSavedMeal(_ meal: SavedMeal) async -> SavedMeal {
-        database.savedMeals.append(meal)
+        guard AppConfiguration.isSupabaseConfigured else {
+            database.savedMeals.append(meal)
+            return meal
+        }
+        let created: [SavedMealDTO] = (try? await supabase.insert("saved_meals", value: SupabaseMapper.savedMealDTO(from: meal))) ?? []
+        let mealID = created.first?.id ?? meal.id
+        for food in meal.foods {
+            let _: [SavedMealFoodDTO]? = try? await supabase.insert("saved_meal_foods", value: SupabaseMapper.savedMealFoodDTO(from: food, savedMealId: mealID))
+        }
         return meal
     }
 
     func updateSavedMeal(_ meal: SavedMeal) async {
-        if let index = database.savedMeals.firstIndex(where: { $0.id == meal.id }) {
-            database.savedMeals[index] = meal
+        guard AppConfiguration.isSupabaseConfigured else {
+            if let index = database.savedMeals.firstIndex(where: { $0.id == meal.id }) {
+                database.savedMeals[index] = meal
+            }
+            return
+        }
+        let _: [SavedMealDTO]? = try? await supabase.update("saved_meals", filters: [
+            URLQueryItem(name: "id", value: "eq.\(meal.id.uuidString)")
+        ], value: SupabaseMapper.savedMealDTO(from: meal))
+        try? await supabase.delete("saved_meal_foods", filters: [URLQueryItem(name: "saved_meal_id", value: "eq.\(meal.id.uuidString)")])
+        for food in meal.foods {
+            let _: [SavedMealFoodDTO]? = try? await supabase.insert("saved_meal_foods", value: SupabaseMapper.savedMealFoodDTO(from: food, savedMealId: meal.id))
         }
     }
 
     func deleteSavedMeal(_ meal: SavedMeal) async {
-        database.savedMeals.removeAll { $0.id == meal.id }
+        guard AppConfiguration.isSupabaseConfigured else {
+            database.savedMeals.removeAll { $0.id == meal.id }
+            return
+        }
+        try? await supabase.delete("saved_meals", filters: [URLQueryItem(name: "id", value: "eq.\(meal.id.uuidString)")])
     }
 }

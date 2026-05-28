@@ -1,6 +1,24 @@
 # TODO operativo
 
-Data aggiornamento: 2026-05-17
+Data aggiornamento: 2026-05-28
+
+## Agenda trainer — fix settimana + linea appuntamenti (2026-05-28)
+
+- [x] `weekDates()`: calcolo lunedì con formula `(weekday - 2 + 7) % 7` — robusto, no edge case
+- [x] `weekView`: 7 giorni Lun–Dom, rimuovi `.prefix(7)` (già esatto)
+- [x] `weekDayCell(date:)`: Capsule 20×2.5pt al posto dei dots multipli
+- [x] Indicatore oggi: bordo 1.5pt sottile invece di sfondo pieno
+- [x] Selected state: sfondo `txtPrimary` (nero), testo bianco
+- [ ] Testare lunedì–domenica su iPhone reale con locale diversa
+
+## Dashboard Trainer — card statistiche e agenda giornaliera (2026-05-28)
+
+- [x] `DashboardStatCard`: icona 44pt (era 30pt), minHeight 126
+- [x] `TrainerDashboardViewModel`: aggiunto `appointmentsForToday` e `clientName(for:)`
+- [x] `TrainerDashboardView`: sezione "Agenda di oggi" con empty state e lista reale
+- [x] `DashboardAgendaRow`: orario, durata, barra colorata, nome cliente, tipo, stato, nota
+- [ ] Testare su Xcode con appuntamenti reali da Supabase
+- [ ] Verificare che `NavigationLink → AppointmentsCalendarView` dentro `NavigationStack` non crei doppie navigation bar
 
 ## Da fare subito
 
@@ -72,15 +90,37 @@ Data aggiornamento: 2026-05-17
 - [ ] Creazione da template.
 - [ ] Creazione esercizi da catalogo.
 - [ ] Area cliente con scheda completa.
+- [x] `TrainerClientWorkoutPlansView`: lista schede attiva+storiche nel dettaglio cliente.
+- [x] `TrainerClientWorkoutPlanDetailView`: giorni collassabili + esercizi completi (sets, reps, recupero, carico, note).
+- [x] `TrainerClientNutritionPlansView`: lista diete attiva+storiche nel dettaglio cliente.
+- [x] `TrainerClientNutritionPlanDetailView`: giorni (Lunedì–Domenica) collassabili + pasti + alimenti con macros/kcal.
+- [x] `ClientDetailView.scheduleTab`: card tappabile → naviga a lista schede.
+- [x] `ClientDetailView.dietTab`: card tappabile → naviga a lista diete.
 
 ### FASE 7 - Nutrizione
 
-- [ ] DTO `meals`.
-- [ ] DTO `meal_foods`.
-- [ ] Lettura piano completo.
+- [x] DTO `MealDTO` con `day_of_week`.
+- [x] DTO `MealFoodDTO` con macros.
+- [x] Migration `meals.day_of_week` (1=Lun, 7=Dom).
+- [x] Wizard "Crea nuova dieta": flusso 3 livelli settimana→giorno→editor.
+- [x] 7 giorni Lunedì–Domenica, 6 slot pasto fissi per giorno.
+- [x] `MealFoodEditorSheet`: ricerca `food_catalog`, stepper grammi, preview kcal live.
+- [x] `createNutritionPlan`: salva meals + meal_foods su Supabase.
+- [ ] `fetchNutritionPlans`: caricare meals + meal_foods da Supabase (solo header ora).
+- [ ] Lettura piano completo con giorni/pasti/alimenti nel client area.
 - [ ] Creazione da template.
-- [ ] Creazione alimenti da catalogo.
-- [ ] Area cliente con dieta completa.
+- [ ] Area cliente con dieta completa (giorno per giorno).
+
+### FASE 8B - Progressi trainer (esercizi)
+
+- [x] `TrainerClientProgressView`: segmented "Peso" | "Esercizi".
+- [x] Sezione Peso: `LineMark + AreaMark` su `progress_entries.weightKg`, stat card Inizio/Attuale/Diff., misure corporee.
+- [x] Sezione Esercizi: lista `ExerciseSparklineCard` (nome, prima→ultima, guadagno, sparkline 68×38pt).
+- [x] `TrainerClientExerciseProgressDetailView`: full chart + storico sessioni.
+- [x] Risoluzione nome esercizio da `workoutPlans` caricati.
+- [x] `ClientDetailView.progressTab`: card tappabile con peso+diff+N esercizi.
+- [x] Migration `exercise_progress_entries` con `exercise_name text` e RLS completa.
+- [ ] Popolare `exercise_progress_entries` dal client workout (attualmente usa `exercise_weight_history`).
 
 ### FASE 8 - Progressi/foto
 
@@ -108,9 +148,15 @@ Data aggiornamento: 2026-05-17
 
 ### FASE 9 - Cataloghi/template
 
+- [x] Pasti salvati: `SavedMealFood` model, `foods: [SavedMealFood]` in `SavedMeal`.
+- [x] Pasti salvati: `SavedMealDTO` + `SavedMealFoodDTO` in `SupabaseDTOs.swift`.
+- [x] Pasti salvati: `SavedMealService` usa Supabase (`saved_meals` + `saved_meal_foods`).
+- [x] Pasti salvati: `EditSavedMealSheet` con ricerca catalogo, stepper grammi, preview kcal/macro live.
+- [x] Pasti salvati: `SavedMealFoodSearchSheet` — lista `food_catalog`, selezione, quantità, aggiungi.
+- [x] Migration `20260528150000_saved_meals_foods.sql` — RLS trainer-owned.
+- [x] Pasti salvati: rimosso `ToolbarItem(.topBarLeading)` con testo troncato; sostituito con `.navigationTitle("Pasti salvati")` standard.
 - [ ] Picker catalogo macchine.
 - [ ] Picker esercizi.
-- [ ] Picker alimenti.
 - [ ] Picker workout template.
 - [ ] Picker meal template.
 

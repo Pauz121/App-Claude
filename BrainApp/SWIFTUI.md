@@ -1,12 +1,16 @@
 # SwiftUI
 
-Data aggiornamento: 2026-05-17
+Data aggiornamento: 2026-05-28
 
 Aggiornamento Fase 1: audit statico completato. Tutti i file Swift sono nel target Xcode. `InviteCodeView` e ora usata in `ClientDetailView` per mostrare il codice invito esistente o appena generato.
 
 Aggiornamento stile: creata scheda dedicata `BrainApp/STILE_APP.md` con descrizione di palette, tipografia, componenti, punti forti e punti deboli dello stile corrente.
 
 Aggiornamento redesign UI: creata scheda dedicata `BrainApp/UI_REDESIGN.md`. L'app e stata portata verso una UI light moderna con design system aggiornato, bottoni neri, card leggere, dashboard trainer operativa, dashboard cliente piu personale e calendario admin dinamico.
+
+Aggiornamento pasti salvati 2026-05-28: `SavedMealFood` struct in `DomainModels.swift` con `quantityGrams`, `caloriesPer100g`, macro per 100g e computed kcal/grammi. `SavedMeal` aggiornato con `foods: [SavedMealFood] = []` e computed `displayProtein/Carb/Fat/kcal` (foods-first, fallback a valori manuali). `EditSavedMealSheet` ridisegnato con ricerca catalogo, stepper grammi e preview totale calorie live. `SavedMealFoodSearchSheet` foglio separato (due step: ricerca → quantità). `SavedMealService` ora usa Supabase con CRUD su `saved_meals` + `saved_meal_foods` (delete+reinsert su update). Migration `20260528150000_saved_meals_foods.sql` creata con RLS trainer-owned e cascade delete.
+
+Aggiornamento 2026-05-28: modifiche UX area trainer e cliente, dettagli in `BrainApp/UX_MODIFICHE_CLIENTE_TRAINER.md`. Agenda: `weekDates()` ora garantisce Lun–Dom con formula diretta; `weekDayCell` sostituisce dots multipli con singola capsule 20×2.5pt. Dashboard trainer: card statistiche con icona 44pt, sezione "Agenda di oggi" con dati reali da Supabase. Wizard "Crea nuova dieta" ridisegnato con 7 giorni e 6 slot pasto. Dettaglio cliente: tab Scheda e Dieta ora cliccabili, navigano a `TrainerClientWorkoutPlansView` e `TrainerClientNutritionPlansView`, ciascuna con lista attuale+storica e dettaglio completo con giorni/esercizi/pasti/alimenti.
 
 ## Struttura app
 
@@ -77,6 +81,12 @@ Trainer:
 - `NutritionPlansListView`
 - `NutritionPlanDetailView`
 - `SubscriptionView`
+- `TrainerClientWorkoutPlansView`
+- `TrainerClientWorkoutPlanDetailView`
+- `TrainerClientNutritionPlansView`
+- `TrainerClientNutritionPlanDetailView`
+- `TrainerClientProgressView`
+- `TrainerClientExerciseProgressDetailView`
 
 Client:
 

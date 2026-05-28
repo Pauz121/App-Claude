@@ -38,6 +38,16 @@ final class TrainerDashboardViewModel: ObservableObject {
         appointments.filter { Calendar.current.isDateInToday($0.startTime) }.count
     }
 
+    var appointmentsForToday: [Appointment] {
+        appointments
+            .filter { Calendar.current.isDateInToday($0.startTime) }
+            .sorted { $0.startTime < $1.startTime }
+    }
+
+    func clientName(for appointment: Appointment) -> String {
+        clients.first { $0.id == appointment.clientID }?.fullName ?? "Cliente"
+    }
+
     var newClientsThisMonth: Int {
         let month = Calendar.current.component(.month, from: Date())
         let year = Calendar.current.component(.year, from: Date())
@@ -139,11 +149,13 @@ final class AppointmentsViewModel: ObservableObject {
     }
 
     func weekDates() -> [Date] {
-        var cal = Calendar(identifier: .gregorian)
-        cal.firstWeekday = 2
-        let comps = cal.dateComponents([.yearForWeekOfYear, .weekOfYear], from: selectedDate)
-        guard let monday = cal.date(from: comps) else {
-            return (0..<7).compactMap { Calendar.current.date(byAdding: .day, value: $0, to: selectedDate) }
+        // Gregorian: Sun=1, Mon=2, Tue=3, ..., Sat=7
+        // (weekday - 2 + 7) % 7  → days since Monday (Mon=0, Tue=1 ... Sun=6)
+        let cal = Calendar(identifier: .gregorian)
+        let weekday = cal.component(.weekday, from: selectedDate)
+        let daysFromMonday = (weekday - 2 + 7) % 7
+        guard let monday = cal.date(byAdding: .day, value: -daysFromMonday, to: selectedDate) else {
+            return []
         }
         return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: monday) }
     }
