@@ -1566,7 +1566,7 @@ private struct ExerciseSparklineCard: View {
     }
 }
 
-struct TrainerClientExerciseProgressDetailView: View {
+private struct TrainerClientExerciseProgressDetailView: View {
     let group: ExerciseProgressGroup
 
     private struct ChartPoint: Identifiable {
